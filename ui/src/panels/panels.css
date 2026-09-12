@@ -11,6 +11,27 @@
   padding: 10px 10px 4px;
 }
 
+/*
+ * The group heading takes its class's colour too. It is the thing you scan
+ * when looking for where a kind of node lives, and a column of identical grey
+ * headings makes you read all three.
+ */
+.palette__group--terminal > .panel-section__title {
+  color: var(--class-terminal);
+}
+
+.palette__group--transform > .panel-section__title {
+  color: var(--class-transform);
+}
+
+.palette__group--card > .panel-section__title {
+  color: var(--class-card);
+}
+
+.palette__group--host > .panel-section__title {
+  color: var(--class-host);
+}
+
 .palette__item {
   display: flex;
   align-items: flex-start;
@@ -38,41 +59,40 @@
 }
 
 .palette__item--terminal {
-  border-left-color: var(--port-card);
+  border-left-color: var(--class-terminal);
 }
 
 .palette__item--transform {
-  border-left-color: var(--text-faint);
+  border-left-color: var(--class-transform);
 }
 
 .palette__item--card {
-  border-left-color: var(--port-terminal);
+  border-left-color: var(--class-card);
 }
 
 .palette__item--host {
-  border-left-color: var(--port-iso);
+  border-left-color: var(--class-host);
 }
 
 .palette__item-icon {
   flex: none;
   margin-top: 2px;
-  color: var(--text-faint);
-}
-
-.palette__item:hover .palette__item-icon {
-  color: var(--text-dim);
 }
 
 .palette__item--terminal .palette__item-icon {
-  color: var(--port-card);
+  color: var(--class-terminal);
+}
+
+.palette__item--transform .palette__item-icon {
+  color: var(--class-transform);
 }
 
 .palette__item--card .palette__item-icon {
-  color: var(--port-terminal);
+  color: var(--class-card);
 }
 
 .palette__item--host .palette__item-icon {
-  color: var(--port-iso);
+  color: var(--class-host);
 }
 
 .palette__item-body {

@@ -37,6 +37,25 @@ export const PALETTE_DRAG_TYPE = "application/x-plexus-node";
 
 const nodeTypes = { plexus: PlexusNodeView };
 
+/**
+ * A minimap block's class, so CSS can colour it.
+ *
+ * Deliberately not React Flow's `nodeColor`, which takes a function and
+ * memoises the minimap around it: the colours come from CSS custom properties
+ * that swap with the theme, and a prop read once at render time keeps whatever
+ * it was first given — switch to light and the blocks stay in the dark
+ * palette. A class name lets the cascade do it, which needs no re-render and
+ * cannot go stale.
+ */
+function minimapClass(node: Node<PlexusNodeData>): string {
+  const data = node.data as PlexusNodeData | undefined;
+  const key = data?.nodeId
+    ? useGraph.getState().graph.nodes.find((n) => n.id === data.nodeId)?.type
+    : undefined;
+  const nodeClass = key ? nodeType(key)?.nodeClass : undefined;
+  return nodeClass ? `mmnode mmnode--${nodeClass}` : "mmnode";
+}
+
 interface CanvasProps {
   problems: Problem[];
 }
@@ -293,7 +312,15 @@ export function Canvas({ problems }: CanvasProps) {
           color="var(--canvas-grid-major)"
         />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable ariaLabel={t("canvas.overview")} />
+        {/* Class-coloured, so the overview shows the shape of the chain and
+            not just four identical blocks. */}
+        <MiniMap
+          pannable
+          zoomable
+          ariaLabel={t("canvas.overview")}
+          nodeClassName={minimapClass}
+          nodeStrokeWidth={0}
+        />
 
         <Panel position="top-left" className="tools">
           <div className="tools__group" role="group" aria-label={t("canvas.tool")}>

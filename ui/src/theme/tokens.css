@@ -69,8 +69,35 @@
   --port-card-wash: rgba(169, 203, 238, 0.16);
   --port-terminal: #3fbcd9;
   --port-terminal-wash: rgba(63, 188, 217, 0.16);
-  --port-iso: #bfa9ee;
-  --port-iso-wash: rgba(191, 169, 238, 0.16);
+  /* The iso8583 channel only ever appears on host-layer nodes, so it borrows
+   * that class's colour rather than being a near-duplicate of another. */
+  --port-iso: var(--class-host);
+  --port-iso-wash: rgba(230, 168, 219, 0.16);
+
+  /*
+   * Node classes: which side of a conversation a node sits on.
+   *
+   * A separate system from the port colours, which say what an *edge* end is.
+   * Reusing the ports for this made the classes hard to scan — terminal side
+   * and transforms came out light blue and grey-blue, which is one colour and
+   * no colour.
+   *
+   * Three steps of 40 degrees, in chain order, so the ramp itself carries
+   * meaning: periwinkle asks, sky transforms, cyan answers. Forty degrees is
+   * about the least that separates instantly at a 3px stripe and a 14px glyph,
+   * and on a navy ground all three have to be *light* — a mid-tone fails
+   * contrast — so hue does the work that lightness cannot.
+   */
+  --class-terminal: #b6abed;
+  --class-transform: #7db8f2;
+  --class-card: #64d8d4;
+  --class-host: #e6a8db;
+
+  /* Faint versions, for the wash behind a node's header. */
+  --class-terminal-wash: rgba(182, 171, 237, 0.1);
+  --class-transform-wash: rgba(125, 184, 242, 0.1);
+  --class-card-wash: rgba(100, 216, 212, 0.1);
+  --class-host-wash: rgba(230, 168, 219, 0.1);
 
   --edge: #41617f;
   --edge-live: #45c193;
@@ -127,8 +154,19 @@
   --port-card-wash: rgba(28, 127, 206, 0.14);
   --port-terminal: #0f6f8c;
   --port-terminal-wash: rgba(15, 111, 140, 0.14);
-  --port-iso: #6355ce;
-  --port-iso-wash: rgba(99, 85, 206, 0.14);
+  --port-iso: var(--class-host);
+  --port-iso-wash: rgba(168, 56, 150, 0.12);
+
+  /* The same three-step ramp, darkened for white. See the dark block. */
+  --class-terminal: #5239d0;
+  --class-transform: #125ca5;
+  --class-card: #19716e;
+  --class-host: #a83896;
+
+  --class-terminal-wash: rgba(82, 57, 208, 0.07);
+  --class-transform-wash: rgba(18, 92, 165, 0.07);
+  --class-card-wash: rgba(25, 113, 110, 0.07);
+  --class-host-wash: rgba(168, 56, 150, 0.07);
 
   --edge: #9db4d2;
   --edge-live: #1e4fbf;

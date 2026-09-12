@@ -70,7 +70,10 @@ export function Palette() {
 
       <div className="rail__scroll">
         {groups.map((group) => (
-          <section key={group.cls} className="palette__group">
+          <section
+            key={group.cls}
+            className={`palette__group palette__group--${group.cls}`}
+          >
             <h2 className="panel-section__title">{group.label}</h2>
             {group.items.map((type) => (
               <button

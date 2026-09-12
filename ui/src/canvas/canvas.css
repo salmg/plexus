@@ -66,9 +66,30 @@
   fill-opacity: 0.6;
 }
 
+/*
+ * Minimap blocks take their node's class colour, through the cascade rather
+ * than through a prop — see minimapClass. This is why the overview repaints
+ * correctly when the theme swaps.
+ */
 .react-flow__minimap-node {
-  fill: var(--border-strong);
   stroke: none;
+  fill: var(--border-strong);
+}
+
+.react-flow__minimap-node.mmnode--terminal {
+  fill: var(--class-terminal);
+}
+
+.react-flow__minimap-node.mmnode--transform {
+  fill: var(--class-transform);
+}
+
+.react-flow__minimap-node.mmnode--card {
+  fill: var(--class-card);
+}
+
+.react-flow__minimap-node.mmnode--host {
+  fill: var(--class-host);
 }
 
 /* ── Node card ────────────────────────────────────────────────────────── */
@@ -93,20 +114,41 @@
   cursor: grabbing;
 }
 
+/*
+ * The class stripe, its icon and a faint wash behind the header, all from one
+ * token per class. Three cues for the same fact: you should be able to tell
+ * which side of a conversation a node sits on without reading it.
+ */
 .pnode--terminal {
-  border-left-color: var(--port-card);
+  border-left-color: var(--class-terminal);
+}
+
+.pnode--terminal .pnode__head {
+  background: var(--class-terminal-wash);
 }
 
 .pnode--transform {
-  border-left-color: var(--text-faint);
+  border-left-color: var(--class-transform);
+}
+
+.pnode--transform .pnode__head {
+  background: var(--class-transform-wash);
 }
 
 .pnode--card {
-  border-left-color: var(--port-terminal);
+  border-left-color: var(--class-card);
+}
+
+.pnode--card .pnode__head {
+  background: var(--class-card-wash);
 }
 
 .pnode--host {
-  border-left-color: var(--port-iso);
+  border-left-color: var(--class-host);
+}
+
+.pnode--host .pnode__head {
+  background: var(--class-host-wash);
 }
 
 .pnode--broken {
@@ -136,6 +178,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  /* Bled out to the card edges: the padding belongs to the card, but the wash
+   * reads as a header band rather than a floating rectangle. */
+  margin: -8px -10px 0;
+  padding: 7px 10px 5px;
+  border-radius: 3px 3px 0 0;
 }
 
 .pnode__icon {
@@ -143,19 +190,19 @@
 }
 
 .pnode--terminal .pnode__icon {
-  color: var(--port-card);
+  color: var(--class-terminal);
 }
 
 .pnode--transform .pnode__icon {
-  color: var(--text-dim);
+  color: var(--class-transform);
 }
 
 .pnode--card .pnode__icon {
-  color: var(--port-terminal);
+  color: var(--class-card);
 }
 
 .pnode--host .pnode__icon {
-  color: var(--port-iso);
+  color: var(--class-host);
 }
 
 .pnode__head .dot {
