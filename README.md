@@ -60,6 +60,47 @@ the second node, with the reason on screen.
   anything in. These thresholds are rules of thumb, not figures from a
   specification — see `TAP_BUDGET_WARN_MS`.
 
+## A graph is untrusted input
+
+A `.plexus.yaml` is a document people send each other, and it names hardware to
+claim, addresses to dial and files to read and write. Every one of the
+following was measured open before it was closed, and each has a test in
+`tests/test_security.py`.
+
+**No page you visit can drive the runtime.** A browser does *not* apply the
+same-origin policy to WebSockets. Any site could open `ws://127.0.0.1:8900/ws`,
+and the Host header on that handshake is honestly `127.0.0.1:8900` — so
+checking Host is not enough. A connection claiming
+`Origin: https://evil.example.com` was accepted, and could have armed a card
+relay. The Origin is now checked against an allow-list: loopback origins, plus
+anything named in `PLEXUS_ALLOWED_ORIGINS`. A *missing* Origin is allowed,
+because that is a native client, and this attack needs a browser.
+
+**No graph can reach outside its workspace.** A trace node's `path` used to be
+an arbitrary file write — appended JSON, anywhere the process could reach. Both
+reads and writes now resolve inside a workspace, which is the directory the
+runtime was started in, and anything escaping it is refused by name. Widen it
+deliberately with `PLEXUS_WORKSPACE`; a graph cannot widen it for you.
+
+**Nothing runs that a graph brings with it.** A playbook is YAML that reaches
+atrium's loader, which uses `yaml.safe_load` — a tag asking for an object is an
+error, not a call. Plexus parses the playbook first anyway, because atrium
+*logs* a bad document and carries on with defaults, and a mutation node that
+binds while silently doing nothing is worse than one that refuses.
+
+**Sizes are bounded.** Frames over 1 MB are refused before being parsed, and an
+APDU larger than a card could read is refused before it becomes bytes.
+
+**Opening a graph is not agreeing to it.** Open shows what the graph will
+claim, dial and write, and loads nothing until you say so. That is an
+informed-consent step, not a boundary — the boundary is the workspace and the
+checks, which do not depend on anyone reading a dialog.
+
+Still true, and deliberate: **there is no authentication on loopback.** Same
+position atrium takes — the operating system already decides who can open a
+local socket. Binding anywhere else refuses to start without
+`PLEXUS_API_TOKEN`.
+
 ## The console
 
 Dark mode is not a colour scheme, it is the working mode: the canvas dims and a

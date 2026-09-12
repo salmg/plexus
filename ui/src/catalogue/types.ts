@@ -8,6 +8,7 @@
  */
 
 import type { DeviceKind, NodeClass, PortSpec } from "../graph/types.ts";
+import type { IconName } from "./icons.tsx";
 
 export interface SelectOption {
   value: string;
@@ -44,6 +45,8 @@ export type FieldSpec =
 export interface NodeType {
   /** Stable catalogue key, e.g. `acr122u.target`.  Persisted in the graph. */
   key: string;
+  /** Which glyph from `icons.tsx` stands for this node. */
+  icon: IconName;
   title: string;
   nodeClass: NodeClass;
   /** One line, shown under the title in the palette and the inspector. */

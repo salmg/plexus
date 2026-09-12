@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from plexus.adapters import load_recorded_card
+from plexus.nodes.paths import resolve_read
 
 
 class CardUnavailable(RuntimeError):
@@ -34,8 +35,11 @@ class RecordedCard:
     def __init__(self, path: str, strict: bool = True) -> None:
         if not path:
             raise CardUnavailable("This capture node has no file selected.")
-        self._inner = load_recorded_card(path, strict=strict)
-        self.path = path
+        # Confined for the same reason the trace node's path is: a graph names
+        # this file and a graph is untrusted input. Pointing a card node at
+        # something that is not a capture is a read of that file either way.
+        self.path = resolve_read(path, what="capture")
+        self._inner = load_recorded_card(self.path, strict=strict)
 
     def connect(self) -> None:
         self._inner.connect()

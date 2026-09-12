@@ -128,6 +128,13 @@ body {
   color: var(--text-faint);
 }
 
+/* An SVG is inline by default, which leaves a baseline gap under it inside a
+ * flex row. Block removes it without a line-height fight. */
+.icon {
+  display: block;
+  flex: none;
+}
+
 /* ── Top bar ──────────────────────────────────────────────────────────── */
 
 .topbar {
@@ -137,6 +144,11 @@ body {
   padding: 0 12px;
   background: var(--surface-raised);
   border-bottom: 1px solid var(--border);
+  /* Run and Stop live at the right-hand end. Without this the bar grows past
+   * the window at narrow widths and takes them off screen, which is the one
+   * control that must never be unreachable. */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .topbar__brand {
@@ -465,4 +477,120 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.panel-head__titled {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Sheet ────────────────────────────────────────────────────────────────
+ * A decision that has to be read before it is made: a graph someone sent you
+ * naming hardware, addresses and paths. Fixed rather than in flow, because it
+ * covers the canvas it is about to replace.
+ */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 9, 13, 0.6);
+}
+
+[data-theme="light"] .sheet {
+  background: rgba(18, 39, 74, 0.28);
+}
+
+.sheet__panel {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  max-height: 100%;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.sheet__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+
+.sheet__head code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet__body {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.sheet__section {
+  padding: 12px 16px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sheet__section:last-child {
+  border-bottom: 0;
+}
+
+.sheet__nodes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sheet__nodes li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.sheet__nodes em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.sheet__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
 }

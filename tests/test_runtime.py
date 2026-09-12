@@ -26,6 +26,7 @@ from plexus.nodes.terminal import find_all, gpo_for, read_records, tlv_walk
 from plexus.runtime import Engine, EngineError, node_implementations
 from plexus.runtime.events import Sink
 
+REPO = Path(__file__).resolve().parent.parent
 CAPTURE = Path(__file__).resolve().parent / "captures" / "mastercard-probe.jsonl"
 
 
@@ -178,27 +179,38 @@ def test_stopping_releases_and_says_so():
 # ── Transforms in the chain ─────────────────────────────────────────────────
 
 
-def test_a_trace_tap_changes_nothing_and_writes_the_exchange(tmp_path):
-    log = tmp_path / "trace.jsonl"
-    engine = run_to_completion(
-        probe_over_capture(
-            extra_nodes="""
+def test_a_trace_tap_changes_nothing_and_writes_the_exchange():
+    """
+    Written inside the repo on purpose: a node may only reach paths inside the
+    workspace, and the workspace has to hold both the capture being read and
+    the trace being written. See tests/test_security.py.
+    """
+    log = REPO / "logs" / "test-trace-tap.jsonl"
+    if log.exists():
+        log.unlink()
+
+    try:
+        engine = run_to_completion(
+            probe_over_capture(
+                extra_nodes="""
           - id: x
             type: trace
             at: [200, 0]
-            config: {detail: tlv, path: "%s"}
-        """
-            % log.as_posix(),
-            extra_edges="""
+            config: {detail: tlv, path: "logs/test-trace-tap.jsonl"}
+        """,
+                extra_edges="""
           - from: p:card
             to: x:terminal
         """,
+            )
         )
-    )
 
-    commands = [e.hex for e in engine.sink.apdus if e.direction == "command"]
-    assert commands[0] == "00A404000E325041592E5359532E444446303100"
-    assert len(log.read_text(encoding="utf-8").strip().splitlines()) == 4
+        commands = [e.hex for e in engine.sink.apdus if e.direction == "command"]
+        assert commands[0] == "00A404000E325041592E5359532E444446303100"
+        assert len(log.read_text(encoding="utf-8").strip().splitlines()) == 4
+    finally:
+        if log.exists():
+            log.unlink()
 
 
 PLAYBOOK = textwrap.dedent(

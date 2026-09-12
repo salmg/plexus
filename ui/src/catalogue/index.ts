@@ -31,6 +31,7 @@ dol_mutations: []
 const TERMINALS: NodeType[] = [
   {
     key: "simtrace2",
+    icon: "sim",
     title: "SimTrace2",
     nodeClass: "terminal",
     summary: "Presents a virtual card to a real terminal over the contact interface.",
@@ -53,6 +54,7 @@ const TERMINALS: NodeType[] = [
   },
   {
     key: "acr122u.target",
+    icon: "emulate",
     title: "ACR122U target",
     nodeClass: "terminal",
     summary: "Emulates a contactless card to a terminal in whose field it sits.",
@@ -77,6 +79,7 @@ const TERMINALS: NodeType[] = [
   },
   {
     key: "vpcd",
+    icon: "window",
     title: "Virtual reader",
     nodeClass: "terminal",
     summary: "Presents a card to anything on this machine that speaks PC/SC, via vpcd.",
@@ -90,6 +93,7 @@ const TERMINALS: NodeType[] = [
   },
   {
     key: "agent",
+    icon: "agent",
     title: "EMV agent",
     nodeClass: "terminal",
     summary: "A synthetic terminal: the model writes its own commands and reads the answers.",
@@ -119,6 +123,7 @@ const TERMINALS: NodeType[] = [
   },
   {
     key: "probe",
+    icon: "probe",
     title: "Fingerprint probe",
     nodeClass: "terminal",
     summary: "Runs atrium's fingerprint sequence and records what the card answers.",
@@ -145,6 +150,7 @@ const TERMINALS: NodeType[] = [
 const CARDS: NodeType[] = [
   {
     key: "pcsc",
+    icon: "contact",
     title: "PC/SC reader",
     nodeClass: "card",
     summary: "A contact card in a reader attached to this host.",
@@ -157,6 +163,7 @@ const CARDS: NodeType[] = [
   },
   {
     key: "acr122u.reader",
+    icon: "field",
     title: "ACR122U field",
     nodeClass: "card",
     summary: "A contactless card sitting in an ACR122U's RF field.",
@@ -172,6 +179,7 @@ const CARDS: NodeType[] = [
   },
   {
     key: "nfcgate",
+    icon: "phone",
     title: "NFCGate session",
     nodeClass: "card",
     summary: "A card held in an Android phone's field, reached through an NFCGate server.",
@@ -196,6 +204,7 @@ const CARDS: NodeType[] = [
   },
   {
     key: "cardproxy",
+    icon: "link",
     title: "Remote card",
     nodeClass: "card",
     summary: "A reader on another machine, reached over atrium's card proxy.",
@@ -215,6 +224,7 @@ const CARDS: NodeType[] = [
   },
   {
     key: "capture",
+    icon: "file",
     title: "Recorded capture",
     nodeClass: "card",
     summary: "Replays a saved session. No hardware, no card, repeatable.",
@@ -244,6 +254,7 @@ const CARDS: NodeType[] = [
 const TRANSFORMS: NodeType[] = [
   {
     key: "mutation",
+    icon: "swap",
     title: "Mutation",
     nodeClass: "transform",
     summary: "Rewrites PDOL, AFL, DOL and response tags as the conversation passes.",
@@ -256,6 +267,7 @@ const TRANSFORMS: NodeType[] = [
   },
   {
     key: "inject",
+    icon: "inject",
     title: "Injection",
     nodeClass: "transform",
     summary: "Fires extra commands at the card around a trigger instruction.",
@@ -292,6 +304,7 @@ const TRANSFORMS: NodeType[] = [
   },
   {
     key: "trace",
+    icon: "eye",
     title: "Trace tap",
     nodeClass: "transform",
     summary: "Decodes TLV and records the exchange. Changes nothing.",
@@ -314,6 +327,7 @@ const TRANSFORMS: NodeType[] = [
   },
   {
     key: "swtx",
+    icon: "clock",
     title: "Timing",
     nodeClass: "transform",
     summary: "Asks the terminal for more time with S(WTX) when the card is slow.",
@@ -335,6 +349,7 @@ const TRANSFORMS: NodeType[] = [
   },
   {
     key: "breakpoint",
+    icon: "pause",
     title: "Breakpoint",
     nodeClass: "transform",
     summary: "Holds each matching APDU until you release it from the console.",

@@ -9,6 +9,7 @@
 import { useMemo } from "react";
 
 import { nodeType } from "../catalogue";
+import { Icon } from "../catalogue/icons";
 import type { FieldSpec } from "../catalogue/types";
 import { chainLatency } from "../graph/validate";
 import type { Problem } from "../graph/validate";
@@ -156,7 +157,7 @@ function GraphInspector({
               {roots.map((r) => (
                 <div key={r.id} style={{ display: "contents" }}>
                   <dt>{r.label || nodeType(r.type)?.title}</dt>
-                  <dd>{chainLatency(graph, r.id)} ms / exchange</dd>
+                  <dd>{chainLatency(graph, r.id) * 2} ms out and back</dd>
                 </div>
               ))}
             </dl>
@@ -200,7 +201,10 @@ function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem
   return (
     <>
       <div className="panel-head">
-        <span>{type.title}</span>
+        <span className="panel-head__titled">
+          <Icon name={type.icon} />
+          {type.title}
+        </span>
         <button
           type="button"
           className="btn btn--ghost btn--icon"
@@ -218,7 +222,7 @@ function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem
             <dt>id</dt>
             <dd>{node.id}</dd>
             <dt>cost</dt>
-            <dd>{type.latencyMs} ms per exchange</dd>
+            <dd>{type.latencyMs} ms each way</dd>
             {telemetry && telemetry.apdus > 0 && (
               <>
                 <dt>seen</dt>

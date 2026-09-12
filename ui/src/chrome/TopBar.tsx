@@ -7,12 +7,14 @@
  * instead, with a sentence saying why.
  */
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import { fromYaml, GraphParseError, toYaml } from "../graph/serialize";
 import type { Problem } from "../graph/validate";
 import { hasBlockingProblem } from "../graph/validate";
 import { emptyGraph } from "../graph/types";
+import type { PlexusGraph } from "../graph/types";
+import { ImportReview } from "./ImportReview";
 import { useGraph } from "../store/useGraph";
 import { isRunning, useRuntime } from "../store/useRuntime";
 
@@ -65,9 +67,16 @@ export function TopBar({
     markClean();
   };
 
+  // Parsed and shown before it is loaded. A graph file is something people
+  // send each other, and it names hardware, addresses and paths — opening one
+  // should not be the same gesture as agreeing to all of that.
+  const [pending, setPending] = useState<{ graph: PlexusGraph; filename: string } | null>(
+    null,
+  );
+
   const open = async (file: File) => {
     try {
-      setGraph(fromYaml(await file.text()), { clean: true });
+      setPending({ graph: fromYaml(await file.text()), filename: file.name });
     } catch (err) {
       const message =
         err instanceof GraphParseError
@@ -191,6 +200,18 @@ export function TopBar({
         >
           Run
         </button>
+      )}
+
+      {pending && (
+        <ImportReview
+          graph={pending.graph}
+          filename={pending.filename}
+          onCancel={() => setPending(null)}
+          onLoad={() => {
+            setGraph(pending.graph, { clean: true });
+            setPending(null);
+          }}
+        />
       )}
     </header>
   );

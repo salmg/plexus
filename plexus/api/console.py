@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from plexus.graph import Graph, chain as chain_of, chain_latency
+from plexus.nodes.transform import MAX_APDU_BYTES
 from plexus.runtime import Engine
 
 Result = Tuple[List[str], Optional[str]]  # (lines, level)
@@ -133,6 +134,12 @@ def _tx(engine: Engine, graph: Optional[Graph], args) -> Result:
         return ["tx takes one hex APDU, e.g. tx 80CA9F1700"], "error"
 
     text = "".join(args).replace(":", "")
+    # Checked before parsing: a megabyte of hex should not become a megabyte of
+    # bytes on its way to being refused.
+    if len(text) > MAX_APDU_BYTES * 2:
+        return [
+            "That is %d bytes; an APDU is at most %d." % (len(text) // 2, MAX_APDU_BYTES)
+        ], "error"
     try:
         apdu = bytes.fromhex(text)
     except ValueError:

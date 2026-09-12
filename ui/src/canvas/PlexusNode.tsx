@@ -12,6 +12,7 @@ import { Handle, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 
 import { nodeType } from "../catalogue";
+import { Icon } from "../catalogue/icons";
 import type { NodeTelemetry, PortSpec } from "../graph/types";
 import { useGraph } from "../store/useGraph";
 import { useRuntime } from "../store/useRuntime";
@@ -38,6 +39,14 @@ const STATUS_CLASS: Record<NodeTelemetry["status"], string> = {
   ready: "dot--warn",
   live: "dot--live",
   error: "dot--danger",
+};
+
+/** A colour alone does not say what it means; the hover does. */
+const STATUS_TITLE: Record<NodeTelemetry["status"], string> = {
+  idle: "not bound",
+  ready: "bound, nothing crossing",
+  live: "traffic crossing now",
+  error: "faulted — see the checks",
 };
 
 export function PlexusNodeView({ data, selected }: NodeProps) {
@@ -80,8 +89,12 @@ export function PlexusNodeView({ data, selected }: NodeProps) {
   return (
     <div className={classes} data-testid={`node-${node.id}`}>
       <header className="pnode__head">
+        <Icon name={type.icon} className="pnode__icon" />
         <span className="pnode__title">{node.label || type.title}</span>
-        <span className={`dot ${telemetry ? STATUS_CLASS[telemetry.status] : ""}`} />
+        <span
+          className={`dot ${telemetry ? STATUS_CLASS[telemetry.status] : ""}`}
+          title={telemetry ? STATUS_TITLE[telemetry.status] : "not armed"}
+        />
       </header>
 
       <div className="pnode__id">{node.id}</div>

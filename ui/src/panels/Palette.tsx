@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 
 import { CLASS_LABEL, CLASS_ORDER, NODE_TYPES } from "../catalogue";
+import { Icon } from "../catalogue/icons";
 import type { NodeType } from "../catalogue/types";
 import { useGraph } from "../store/useGraph";
 import { PALETTE_DRAG_TYPE } from "../canvas/Canvas";
@@ -73,8 +74,11 @@ export function Palette() {
                 onClick={() => addNode(type.key, placeAt(nodeCount))}
                 title={type.summary}
               >
-                <span className="palette__item-title">{type.title}</span>
-                <span className="palette__item-summary">{type.summary}</span>
+                <Icon name={type.icon} className="palette__item-icon" />
+                <span className="palette__item-body">
+                  <span className="palette__item-title">{type.title}</span>
+                  <span className="palette__item-summary">{type.summary}</span>
+                </span>
               </button>
             ))}
           </section>
@@ -82,6 +86,19 @@ export function Palette() {
 
         {groups.length === 0 && <p className="empty">No node matches “{query}”.</p>}
       </div>
+
+      {/* The port colours carry the whole model, and nothing else on screen
+          says what they mean. */}
+      <footer className="legend">
+        <span className="legend__row" title="A requester: it needs a card on the other end">
+          <i className="legend__port legend__port--card" />
+          card port — wants a card
+        </span>
+        <span className="legend__row" title="A responder: it behaves as a card would">
+          <i className="legend__port legend__port--terminal" />
+          terminal port — is a card
+        </span>
+      </footer>
     </aside>
   );
 }

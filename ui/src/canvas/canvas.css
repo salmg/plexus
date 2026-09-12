@@ -135,11 +135,36 @@
 .pnode__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
 }
 
+.pnode__icon {
+  flex: none;
+}
+
+.pnode--terminal .pnode__icon {
+  color: var(--port-card);
+}
+
+.pnode--transform .pnode__icon {
+  color: var(--text-dim);
+}
+
+.pnode--card .pnode__icon {
+  color: var(--port-terminal);
+}
+
+.pnode--host .pnode__icon {
+  color: var(--port-iso);
+}
+
+.pnode__head .dot {
+  margin-left: auto;
+}
+
 .pnode__title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
@@ -154,6 +179,11 @@
   letter-spacing: 0.03em;
   color: var(--text-faint);
   margin-top: 1px;
+  /* Aligned under the title rather than the icon: icon width plus its gap. */
+  padding-left: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pnode__body {

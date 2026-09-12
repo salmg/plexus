@@ -10,15 +10,30 @@ anything else refuses to start without one. That is a deliberate refusal rather
 than a warning — an open control plane for a card relay is not something to
 leave to a log line nobody reads.
 
-**On the Host header.** A browser enforces same-origin, but DNS rebinding
-defeats it: an attacker's page re-resolves its own name to 127.0.0.1 and is
-then treated as same-origin. Checking the Host header breaks that, because the
-request still arrives carrying the attacker's name.
+**On the Host header.** DNS rebinding defeats an origin check on its own: an
+attacker's page re-resolves its own name to 127.0.0.1 and is then same-origin.
+Checking the Host header breaks that, because the request still arrives
+carrying the attacker's name.
+
+**On the Origin header, which is the one that matters.** A browser does *not*
+apply the same-origin policy to WebSockets. Any page the operator visits can
+open ``ws://127.0.0.1:8900/ws``, and the Host header on that handshake is
+honestly ``127.0.0.1:8900`` — so a Host check alone lets it through. Measured,
+before this was here: a connection with ``Origin: https://evil.example.com``
+was accepted and could have armed a card relay. The browser is a confused
+deputy, and "loopback is safe because the OS decides who can connect" is not
+true when the thing connecting is the operator's own browser on someone else's
+instructions.
+
+So the Origin is checked against an allow-list. A missing Origin is allowed,
+because that is a native client — the CLI, a script, a test — and this attack
+needs a browser, which always sends one and never lets a page forge it.
 """
 
 from __future__ import annotations
 
 import ipaddress
+import json
 import logging
 import os
 import secrets
@@ -34,8 +49,13 @@ log = logging.getLogger(__name__)
 
 TOKEN_VARIABLE = "PLEXUS_API_TOKEN"
 HOSTS_VARIABLE = "PLEXUS_ALLOWED_HOSTS"
+ORIGINS_VARIABLE = "PLEXUS_ALLOWED_ORIGINS"
 
 _DEFAULT_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1", "testserver"}
+
+#: The largest frame that will be parsed. A graph is a few kilobytes; anything
+#: past this is someone filling memory rather than describing a rig.
+MAX_FRAME_BYTES = 1_000_000
 
 
 def is_loopback(host: str) -> bool:
@@ -66,6 +86,41 @@ def host_ok(header: Optional[str]) -> bool:
         return ipaddress.ip_address(name.strip("[]")).is_loopback
     except ValueError:
         return False
+
+
+def origin_ok(origin: Optional[str]) -> bool:
+    """
+    May a page from this origin drive the runtime?
+
+    No Origin at all is a native client and is allowed — a browser always sends
+    one and a page cannot forge it, so this check is exactly as strong as the
+    browser's own guarantee. A loopback origin is the editor. Anything else has
+    to be named in PLEXUS_ALLOWED_ORIGINS.
+    """
+    if origin is None or origin == "":
+        return True
+    if origin == "null":
+        # A sandboxed iframe or a file:// page. Nothing legitimate here does
+        # that, and it is precisely what a hostile embed looks like.
+        return False
+
+    configured = {
+        o.strip().rstrip("/").lower()
+        for o in os.environ.get(ORIGINS_VARIABLE, "").split(",")
+        if o.strip()
+    }
+    if origin.rstrip("/").lower() in configured:
+        return True
+
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(origin)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    return bool(parsed.hostname) and is_loopback(parsed.hostname)
 
 
 def guard_bind(host: str) -> None:
@@ -116,6 +171,13 @@ def create_app() -> FastAPI:
             await socket.close(code=4403)
             return
 
+        # The one that stops a page the operator happens to be visiting from
+        # arming a card relay. See the module docstring.
+        if not origin_ok(socket.headers.get("origin")):
+            log.warning("refused a websocket from origin %r", socket.headers.get("origin"))
+            await socket.close(code=4403)
+            return
+
         offered = socket.query_params.get("token") or socket.headers.get("x-plexus-token")
         if not token_ok(offered):
             await socket.close(code=4401)
@@ -127,7 +189,24 @@ def create_app() -> FastAPI:
 
         try:
             while True:
-                message = await socket.receive_json()
+                # Read as text and measure before parsing: `receive_json`
+                # would have already built the object out of however many
+                # megabytes arrived.
+                raw = await socket.receive_text()
+                if len(raw) > MAX_FRAME_BYTES:
+                    await socket.send_json(
+                        {
+                            "type": "error",
+                            "message": "Frame is %d bytes; the limit is %d."
+                            % (len(raw), MAX_FRAME_BYTES),
+                        }
+                    )
+                    continue
+                try:
+                    message = json.loads(raw)
+                except ValueError:
+                    await socket.send_json({"type": "error", "message": "Frames are JSON."})
+                    continue
                 if not isinstance(message, dict):
                     await socket.send_json(
                         {"type": "error", "message": "Frames are objects."}

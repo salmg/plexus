@@ -15,9 +15,16 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+import yaml
+
 from plexus.adapters import load_mutation_engine
+from plexus.nodes.paths import resolve_write
 
 log = logging.getLogger(__name__)
+
+#: An extended APDU tops out around 65 kB. Anything past that is not a command
+#: a card will read, so it is refused before it reaches one.
+MAX_APDU_BYTES = 65544
 
 
 class TransformError(RuntimeError):
@@ -49,10 +56,13 @@ class Trace(PassThrough):
         self.detail = detail
         self.seen = 0
         self._handle = None
+        self.path: Optional[Path] = None
         if path:
-            target = Path(path)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            self._handle = target.open("a", encoding="utf-8")
+            # A graph is untrusted input that names files. Before this was
+            # confined, `path` was an arbitrary file write — one appended JSON
+            # line at a time, anywhere the process could reach.
+            self.path = resolve_write(path, what="trace")
+            self._handle = self.path.open("a", encoding="utf-8")
 
     def on_response(self, command: bytes, response: bytes) -> bytes:
         self.seen += 1
@@ -95,6 +105,21 @@ class Mutation:
     ) -> None:
         if not playbook or not playbook.strip():
             raise TransformError("This mutation node has an empty playbook.")
+
+        # Parsed here before atrium sees it, because atrium's loader catches a
+        # bad document, logs a warning and carries on with defaults. That is
+        # the worst outcome available: the node binds, the run starts, and the
+        # operator believes mutations are armed when nothing is. A playbook
+        # that does not parse has to stop the arm.
+        try:
+            parsed = yaml.safe_load(playbook)
+        except yaml.YAMLError as exc:
+            raise TransformError("The playbook is not valid YAML: %s" % exc) from exc
+        if not isinstance(parsed, dict):
+            raise TransformError(
+                "A playbook is a mapping of rules; this one is %s."
+                % type(parsed).__name__
+            )
 
         self._temp = Path(
             tempfile.mkstemp(prefix="plexus-playbook-", suffix=".yaml")[1]
@@ -264,6 +289,10 @@ def _hex(text: str, what: str) -> bytes:
     cleaned = "".join(text.split()).replace(":", "")
     if not cleaned:
         raise TransformError(f"{what} is empty.")
+    if len(cleaned) > MAX_APDU_BYTES * 2:
+        raise TransformError(
+            f"{what} is {len(cleaned) // 2} bytes; an APDU is at most {MAX_APDU_BYTES}."
+        )
     try:
         return bytes.fromhex(cleaned)
     except ValueError as exc:

@@ -151,3 +151,21 @@
     --console-height: 200px;
   }
 }
+
+/* Narrower still: the top bar has more controls than fit, and Run must not be
+ * the thing that falls off the end. The brand tagline and the graph name are
+ * the two that carry no action. */
+@media (max-width: 1100px) {
+  .topbar {
+    gap: 6px;
+  }
+
+  .topbar__brand small,
+  .topbar__name {
+    display: none;
+  }
+
+  .topbar .btn {
+    padding: 0 7px;
+  }
+}

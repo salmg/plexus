@@ -12,7 +12,9 @@
 }
 
 .palette__item {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   width: 100%;
   margin-bottom: 5px;
   padding: 6px 8px 7px;
@@ -51,6 +53,32 @@
   border-left-color: var(--port-iso);
 }
 
+.palette__item-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--text-faint);
+}
+
+.palette__item:hover .palette__item-icon {
+  color: var(--text-dim);
+}
+
+.palette__item--terminal .palette__item-icon {
+  color: var(--port-card);
+}
+
+.palette__item--card .palette__item-icon {
+  color: var(--port-terminal);
+}
+
+.palette__item--host .palette__item-icon {
+  color: var(--port-iso);
+}
+
+.palette__item-body {
+  min-width: 0;
+}
+
 .palette__item-title {
   display: block;
   font-size: 13px;
@@ -67,6 +95,48 @@
   font-size: 11.5px;
   line-height: 1.4;
   color: var(--text-faint);
+}
+
+/* ── Legend ───────────────────────────────────────────────────────────── */
+
+.legend {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 12px 11px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+
+.legend__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-dim);
+}
+
+.legend__row--hint {
+  margin-top: 2px;
+  color: var(--text-faint);
+  line-height: 1.45;
+}
+
+.legend__port {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.legend__port--card {
+  background: var(--port-card);
+}
+
+.legend__port--terminal {
+  background: var(--port-terminal);
 }
 
 /* ── Inspector ────────────────────────────────────────────────────────── */
