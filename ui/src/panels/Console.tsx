@@ -232,8 +232,10 @@ export function Console() {
 
     /* ── Live stream ──────────────────────────────────────────────────── */
 
-    let apduCursor = useRuntime.getState().apdus.length;
-    let logCursor = useRuntime.getState().logs.length;
+    // Against the totals, not the buffer lengths. A length saturates at the
+    // cap and stops being a position; a total does not.
+    let apduSeen = useRuntime.getState().apduTotal;
+    let logSeen = useRuntime.getState().logTotal;
 
     const echo = (text: string) => {
       // Print above the prompt and put the half-typed line back underneath.
@@ -241,18 +243,39 @@ export function Console() {
       redraw();
     };
 
+    /**
+     * What arrived since the last tick, and what the ring buffer lost.
+     *
+     * `held` is a window on the end of the stream; `arrived` says how far
+     * the stream moved. When more arrived than the window holds, the middle
+     * is gone — say so rather than let it vanish, which is what the server
+     * does with the frames it drops.
+     */
+    const since = (held: readonly unknown[], total: number, seen: number) => {
+      if (total < seen) return { fresh: held.length, lost: 0, seen: total };
+      const arrived = total - seen;
+      return {
+        fresh: Math.min(arrived, held.length),
+        lost: Math.max(0, arrived - held.length),
+        seen: total,
+      };
+    };
+
     const unsubscribe = useRuntime.subscribe((state) => {
-      if (state.apdus.length < apduCursor) apduCursor = 0;
-      if (state.logs.length < logCursor) logCursor = 0;
+      const logs = since(state.logs, state.logTotal, logSeen);
+      logSeen = logs.seen;
+      if (logs.lost) echo(formatDropped(logs.lost));
+      for (const log of state.logs.slice(state.logs.length - logs.fresh)) {
+        echo(formatLog(log));
+      }
 
-      const newLogs = state.logs.slice(logCursor);
-      logCursor = state.logs.length;
-      for (const log of newLogs) echo(formatLog(log));
-
-      const newApdus = state.apdus.slice(apduCursor);
-      apduCursor = state.apdus.length;
+      const apdus = since(state.apdus, state.apduTotal, apduSeen);
+      apduSeen = apdus.seen;
       if (!mutedRef.current) {
-        for (const event of newApdus) echo(formatApdu(event));
+        if (apdus.lost) echo(formatDropped(apdus.lost));
+        for (const e of state.apdus.slice(state.apdus.length - apdus.fresh)) {
+          echo(formatApdu(e));
+        }
       }
     });
 
@@ -336,4 +359,16 @@ function wrapHex(hex: string): string {
 function formatLog(line: LogLine): string {
   const colour = line.level === "error" ? RED : line.level === "warn" ? AMBER : DIM;
   return `${colour}${line.source}: ${line.text}${RESET}`;
+}
+
+/**
+ * What the console's own ring buffer lost.
+ *
+ * The runtime says when *it* drops frames keeping up; this says when the page
+ * does. Without it the trace simply skipped, which is the failure this whole
+ * change is about — something going missing with nothing to show for it.
+ */
+function formatDropped(count: number): string {
+  const line = count === 1 ? "1 line" : `${count} lines`;
+  return `${AMBER}plexus: ${line} scrolled past while the console was behind.${RESET}`;
 }
