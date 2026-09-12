@@ -1,0 +1,336 @@
+/* The canvas, the node cards, the ports and the wires. */
+
+.canvas {
+  position: relative;
+  width: 100%;
+  min-height: 0;
+  background: var(--canvas-bg);
+}
+
+/*
+ * React Flow's root is `height: 100%`, and a percentage height resolves against
+ * the parent's *specified* height — which for a flex item is `auto`, so it
+ * comes out as zero and React Flow refuses to lay the graph out at all.  Taking
+ * it out of flow against the relatively-positioned canvas resolves against the
+ * used height instead, which is the one that is actually 600-odd pixels.
+ */
+.canvas > .react-flow {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+}
+
+.react-flow {
+  --xy-background-color: var(--canvas-bg);
+}
+
+.react-flow__attribution {
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.react-flow__attribution a {
+  color: var(--text-faint);
+}
+
+.react-flow__controls {
+  box-shadow: var(--shadow-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.react-flow__controls-button {
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+  fill: var(--text-dim);
+  width: 24px;
+  height: 24px;
+}
+
+.react-flow__controls-button:hover {
+  background: var(--surface-hover);
+  fill: var(--text);
+}
+
+.react-flow__minimap {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.react-flow__minimap-mask {
+  fill: var(--canvas-bg);
+  fill-opacity: 0.6;
+}
+
+.react-flow__minimap-node {
+  fill: var(--border-strong);
+  stroke: none;
+}
+
+/* ── Node card ────────────────────────────────────────────────────────── */
+
+/* Size is declared to React Flow too — see NODE_WIDTH / NODE_HEIGHT. */
+.pnode {
+  position: relative;
+  width: 184px;
+  height: 100px;
+  overflow: hidden;
+  padding: 8px 10px 9px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+  cursor: grab;
+  user-select: none;
+}
+
+.pnode:active {
+  cursor: grabbing;
+}
+
+.pnode--terminal {
+  border-left-color: var(--port-card);
+}
+
+.pnode--transform {
+  border-left-color: var(--text-faint);
+}
+
+.pnode--card {
+  border-left-color: var(--port-terminal);
+}
+
+.pnode--host {
+  border-left-color: var(--port-iso);
+}
+
+.pnode--broken {
+  border-left-color: var(--danger);
+}
+
+.pnode.is-selected {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 1px var(--border-focus);
+}
+
+.pnode.has-error {
+  border-color: var(--danger);
+}
+
+.pnode.is-disabled {
+  opacity: 0.45;
+}
+
+.pnode.is-live {
+  border-top-color: var(--ok);
+  border-right-color: var(--ok);
+  border-bottom-color: var(--ok);
+}
+
+.pnode__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pnode__title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pnode__id {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+  margin-top: 1px;
+}
+
+.pnode__body {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.pnode__bind {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pnode__bind.is-missing {
+  color: var(--danger);
+}
+
+.pnode__stats {
+  display: flex;
+  gap: 8px;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ok);
+}
+
+.pnode__stats--idle {
+  color: var(--text-faint);
+}
+
+.pnode__stats .is-error {
+  color: var(--danger);
+}
+
+/* ── Ports ────────────────────────────────────────────────────────────── */
+
+.react-flow__handle.pport {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  border: 1px solid var(--canvas-bg);
+}
+
+.pport--requester {
+  background: var(--port-card);
+}
+
+.pport--responder {
+  background: var(--port-terminal);
+}
+
+.pport--iso8583 {
+  background: var(--port-iso);
+}
+
+.pport--oob {
+  background: var(--port-iso);
+  border-radius: 50%;
+}
+
+.react-flow__handle.pport:hover {
+  box-shadow: 0 0 0 3px var(--port-card-wash);
+}
+
+.pport--responder:hover {
+  box-shadow: 0 0 0 3px var(--port-terminal-wash);
+}
+
+.pport__label {
+  position: absolute;
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+  pointer-events: none;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+
+.pport__label--left {
+  left: 8px;
+}
+
+.pport__label--right {
+  right: 8px;
+}
+
+.pport__label--oob {
+  bottom: -15px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--port-iso);
+}
+
+/* ── Wires ────────────────────────────────────────────────────────────── */
+
+.react-flow__edge-path {
+  stroke: var(--edge);
+  stroke-width: 1.5;
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--text-dim);
+}
+
+.react-flow__edge.animated .react-flow__edge-path {
+  stroke: var(--edge-live);
+}
+
+.pedge--oob .react-flow__edge-path {
+  stroke: var(--edge-oob);
+  stroke-dasharray: 5 4;
+}
+
+.react-flow__connectionline .react-flow__edge-path {
+  stroke: var(--accent);
+  stroke-dasharray: 4 3;
+}
+
+.react-flow__edge-text {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  fill: var(--text-dim);
+}
+
+.react-flow__edge-textbg {
+  fill: var(--canvas-bg);
+}
+
+.react-flow__handle-connecting {
+  box-shadow: 0 0 0 3px var(--danger-wash);
+}
+
+.react-flow__handle-valid {
+  box-shadow: 0 0 0 3px var(--ok-wash);
+}
+
+/* ── Canvas overlays ──────────────────────────────────────────────────── */
+
+.canvas__hint {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 340px;
+  text-align: center;
+  pointer-events: none;
+  color: var(--text-dim);
+}
+
+.canvas__hint p {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.canvas__hint-sub {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
+.canvas__refusal {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 6;
+  max-width: 460px;
+  padding: 7px 12px;
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--surface-raised);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+}

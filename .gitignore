@@ -1,0 +1,27 @@
+# Node
+node_modules/
+ui/dist/
+ui/.vite/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Runtime output — traces and captures are data, not source
+logs/
+*.jsonl
+
+# Local runtime pointers and secrets
+.env
+.env.local
+
+# Editors
+.DS_Store
+.idea/
+.vscode/

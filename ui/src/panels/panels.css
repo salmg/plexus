@@ -1,0 +1,164 @@
+/* Palette, inspector and console. */
+
+/* ── Palette ──────────────────────────────────────────────────────────── */
+
+.palette__search {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.palette__group {
+  padding: 10px 10px 4px;
+}
+
+.palette__item {
+  display: block;
+  width: 100%;
+  margin-bottom: 5px;
+  padding: 6px 8px 7px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-faint);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  cursor: grab;
+}
+
+.palette__item:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.palette__item:active {
+  cursor: grabbing;
+}
+
+.palette__item--terminal {
+  border-left-color: var(--port-card);
+}
+
+.palette__item--transform {
+  border-left-color: var(--text-faint);
+}
+
+.palette__item--card {
+  border-left-color: var(--port-terminal);
+}
+
+.palette__item--host {
+  border-left-color: var(--port-iso);
+}
+
+.palette__item-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.palette__item-summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 1px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+/* ── Inspector ────────────────────────────────────────────────────────── */
+
+.inspector__summary {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.inspector__actions {
+  display: flex;
+  gap: 8px;
+  border-bottom: 0;
+}
+
+.caveats {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.caveats li {
+  margin-bottom: 6px;
+}
+
+/* ── Console ──────────────────────────────────────────────────────────── */
+
+.console {
+  display: grid;
+  grid-template-rows: 32px minmax(0, 1fr);
+  min-height: 0;
+  background: var(--surface-sunken);
+  border-top: 1px solid var(--border);
+}
+
+.console__tools {
+  display: flex;
+  gap: 4px;
+}
+
+.console__tools .btn {
+  height: 22px;
+  font-size: 11px;
+  padding: 0 7px;
+}
+
+.console__term {
+  min-height: 0;
+  padding: 4px 0 4px 10px;
+  overflow: hidden;
+}
+
+.console__term .xterm {
+  height: 100%;
+}
+
+.console__term .xterm-viewport {
+  background: transparent !important;
+  scrollbar-width: thin;
+}
+
+/* ── Top bar extras ───────────────────────────────────────────────────── */
+
+.topbar__dirty {
+  color: var(--warn);
+}
+
+/* ── Scrollbars, so a dark pane does not get a light gutter ───────────── */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}

@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plexus"
+version = "0.1.0"
+description = "A node canvas for atrium: wire readers, phones and mutations into a relay you can see."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+# The model and the catalogue need only PyYAML, so a machine with no reader can
+# still read, check and diff a graph.  Everything that touches hardware is an
+# extra, because atrium's own dependencies (pyscard, virtualsmartcard) do not
+# install cleanly everywhere and should not block working on the graph itself.
+dependencies = [
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+runtime = [
+  "fastapi>=0.110.0",
+  "uvicorn[standard]>=0.29.0",
+  "websockets>=12.0",
+]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.5",
+]
+
+[project.scripts]
+plexus = "plexus.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["plexus*"]
+
+[tool.ruff]
+line-length = 90
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

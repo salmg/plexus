@@ -1,0 +1,468 @@
+/* Reset, application shell, and the primitives every panel shares. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--canvas-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent-wash);
+}
+
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+/* ── Shell ────────────────────────────────────────────────────────────────
+ * A fixed top bar, then three columns, then an optional console drawer that
+ * steals height from the middle row rather than overlaying it — a console you
+ * cannot see past is a console you turn off.
+ */
+
+.shell {
+  display: grid;
+  grid-template-rows: var(--topbar-height) minmax(0, 1fr);
+  height: 100%;
+}
+
+.shell__body {
+  display: grid;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr) var(--inspector-width);
+  min-height: 0;
+}
+
+.shell__body--no-inspector {
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+}
+
+/*
+ * Flex, not grid, and deliberately.  React Flow measures its own container on
+ * mount and refuses to lay out a graph in a box of zero height; a percentage
+ * height on a grid item resolves against an indefinite row on that first pass
+ * and comes out as nothing.  Flex hands the canvas a definite height straight
+ * away, so the graph is measured once and correctly.
+ */
+.shell__centre {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.shell__centre > .canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.shell__centre > .console {
+  flex: 0 0 var(--console-height);
+}
+
+/* ── Rails ────────────────────────────────────────────────────────────── */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-raised);
+  border-right: 1px solid var(--border);
+}
+
+.rail--right {
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+
+.rail__scroll {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px;
+  height: 32px;
+  flex: none;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-section {
+  padding: 10px 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-section__title {
+  margin: 0 0 8px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ── Top bar ──────────────────────────────────────────────────────────── */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.topbar__brand small {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.topbar__name {
+  min-width: 0;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.topbar__spacer {
+  flex: 1;
+}
+
+/* ── Controls ─────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--text-faint);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  color: var(--text-inverse);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 500;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  filter: brightness(1.08);
+}
+
+.btn--danger {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-wash);
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-color: var(--border);
+}
+
+.btn--icon {
+  width: 26px;
+  padding: 0;
+  justify-content: center;
+}
+
+.field {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.field__label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.field__help {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.field__error {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.input,
+.select,
+.textarea {
+  display: block;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.textarea {
+  height: auto;
+  min-height: 120px;
+  padding: 7px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  resize: vertical;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+.input--mono {
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+.input:hover,
+.select:hover,
+.textarea:hover {
+  border-color: var(--border-strong);
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.checkbox input {
+  accent-color: var(--accent);
+  width: 13px;
+  height: 13px;
+  margin: 0;
+}
+
+/* ── Small display primitives ─────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  background: var(--surface);
+  white-space: nowrap;
+}
+
+.badge--ok {
+  color: var(--ok);
+  border-color: var(--ok);
+  background: var(--ok-wash);
+}
+
+.badge--warn {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: var(--warn-wash);
+}
+
+.badge--danger {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-wash);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--text-faint);
+}
+
+.dot--ok {
+  background: var(--ok);
+}
+
+.dot--warn {
+  background: var(--warn);
+}
+
+.dot--danger {
+  background: var(--danger);
+}
+
+.dot--live {
+  background: var(--ok);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.empty {
+  padding: 16px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  font-size: 11px;
+}
+
+.kv dt {
+  color: var(--text-faint);
+}
+
+.kv dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+/* ── Problems list ────────────────────────────────────────────────────── */
+
+.problem {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  width: 100%;
+  text-align: left;
+  color: var(--text-dim);
+  font-family: inherit;
+}
+
+.problem:hover {
+  background: var(--surface-hover);
+}
+
+.problem__icon {
+  flex: none;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.problem--error .problem__icon {
+  color: var(--danger);
+}
+
+.problem--warning .problem__icon {
+  color: var(--warn);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

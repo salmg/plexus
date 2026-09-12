@@ -1,0 +1,531 @@
+"""
+The Plexus graph model, Python side.
+
+This mirrors ``ui/src/graph/types.ts`` and ``ui/src/graph/validate.ts``.  The
+editor and the runtime have to agree about what a graph means, and the cheapest
+way to keep them agreeing is for both to read the same catalogue (see
+``plexus.catalogue``) and apply the same rules.
+
+An edge is a conversation, not a push.  A command APDU travels from the
+requester to the responder and the response comes back along the same edge, so
+ports hold roles rather than directions:
+
+    requester  — I ask.  Something on the other end has to answer.
+    responder  — I answer.  I present myself as the thing being asked.
+
+On the ``apdu`` channel those are the card port and the terminal port.  An edge
+is legal when two ports share a channel and hold opposite roles, and it always
+runs requester → responder.
+
+Nothing here touches hardware or imports atrium; it is pure model code so it
+can be tested on a machine with no reader in it.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Iterable, Iterator, Literal
+
+import yaml
+
+from plexus.catalogue import CATALOGUE, NodeType
+
+Channel = Literal["apdu", "iso8583"]
+PortRole = Literal["requester", "responder"]
+ProblemLevel = Literal["error", "warning"]
+
+#: Rules of thumb, not figures from a specification.  Contactless kernels
+#: enforce a per-exchange timing budget whose exact value varies by kernel and
+#: is not something this tool can know.  They exist so that a graph which is
+#: obviously too slow says so before hardware is plugged in.
+TAP_BUDGET_WARN_MS = 120
+TAP_BUDGET_FAIL_MS = 300
+
+CONTACTLESS_TERMINALS = {"acr122u.target"}
+
+_REF = re.compile(r"^(?P<node>.+):(?P<port>[^:]+)$")
+
+
+class GraphError(ValueError):
+    """A graph file that cannot be read.  User-facing."""
+
+
+@dataclass(frozen=True)
+class PortRef:
+    node: str
+    port: str
+
+    @classmethod
+    def parse(cls, text: str, where: str) -> "PortRef":
+        match = _REF.match(text or "")
+        if not match:
+            raise GraphError(f'{where} should read "node:port", got "{text}".')
+        return cls(match.group("node"), match.group("port"))
+
+    def __str__(self) -> str:
+        return f"{self.node}:{self.port}"
+
+
+@dataclass
+class Node:
+    id: str
+    type: str
+    position: tuple[int, int] = (0, 0)
+    config: dict[str, Any] = field(default_factory=dict)
+    label: str | None = None
+    host: str | None = None
+    disabled: bool = False
+
+    @property
+    def spec(self) -> NodeType:
+        return CATALOGUE.require(self.type)
+
+    @property
+    def name(self) -> str:
+        """What to call this node in a message to a person."""
+        return (self.label or "").strip() or self.spec.title
+
+
+@dataclass
+class Edge:
+    id: str
+    source: PortRef
+    target: PortRef
+
+
+@dataclass
+class Host:
+    id: str
+    name: str
+    address: str | None = None
+    note: str | None = None
+
+
+@dataclass
+class Graph:
+    name: str = "untitled"
+    hosts: list[Host] = field(default_factory=list)
+    nodes: list[Node] = field(default_factory=list)
+    edges: list[Edge] = field(default_factory=list)
+    version: int = 1
+
+    # ── Lookup ──────────────────────────────────────────────────────────
+
+    def node(self, node_id: str) -> Node | None:
+        return next((n for n in self.nodes if n.id == node_id), None)
+
+    @property
+    def active(self) -> list[Node]:
+        return [n for n in self.nodes if not n.disabled]
+
+    def edge_from(self, ref: PortRef) -> Edge | None:
+        return next((e for e in self.edges if e.source == ref), None)
+
+    def touching(self, ref: PortRef) -> Iterator[Edge]:
+        for edge in self.edges:
+            if edge.source == ref or edge.target == ref:
+                yield edge
+
+    # ── Reading and writing ─────────────────────────────────────────────
+
+    @classmethod
+    def load(cls, path: str | Path) -> "Graph":
+        return cls.from_yaml(Path(path).read_text(encoding="utf-8"))
+
+    @classmethod
+    def from_yaml(cls, text: str) -> "Graph":
+        try:
+            raw = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            raise GraphError(f"Not valid YAML: {exc}") from exc
+
+        if not isinstance(raw, dict):
+            raise GraphError("The file is empty.")
+        if raw.get("version") != 1:
+            raise GraphError(
+                f"Unsupported graph version {raw.get('version')!r}. "
+                "This build reads version 1."
+            )
+
+        nodes = [_node_from(entry, i) for i, entry in enumerate(raw.get("nodes") or [])]
+
+        seen: set[str] = set()
+        for node in nodes:
+            if node.id in seen:
+                raise GraphError(f'Two nodes share the id "{node.id}".')
+            seen.add(node.id)
+
+        edges = [
+            _edge_from(entry, i, seen) for i, entry in enumerate(raw.get("edges") or [])
+        ]
+
+        return cls(
+            name=str(raw.get("name") or "untitled"),
+            hosts=[_host_from(h, i) for i, h in enumerate(raw.get("hosts") or [])],
+            nodes=nodes,
+            edges=edges,
+        )
+
+    def to_yaml(self) -> str:
+        document: dict[str, Any] = {"version": 1, "name": self.name}
+        if self.hosts:
+            document["hosts"] = [
+                {k: v for k, v in vars(h).items() if v is not None} for h in self.hosts
+            ]
+        document["nodes"] = [_node_to(n) for n in self.nodes]
+        document["edges"] = [
+            {"id": e.id, "from": str(e.source), "to": str(e.target)} for e in self.edges
+        ]
+        return yaml.safe_dump(document, sort_keys=False, width=88, allow_unicode=True)
+
+
+# ── Problems ────────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class Problem:
+    code: str
+    level: ProblemLevel
+    message: str
+    node_id: str | None = None
+    edge_id: str | None = None
+
+    @property
+    def blocking(self) -> bool:
+        return self.level == "error"
+
+
+@dataclass(frozen=True)
+class Device:
+    id: str
+    kind: str
+    name: str
+    host: str = ""
+    available: bool = True
+    detail: str | None = None
+
+
+def validate(graph: Graph, devices: Iterable[Device] = ()) -> list[Problem]:
+    """Every reason this graph should not be armed, worst first."""
+    by_id = {d.id: d for d in devices}
+    problems: list[Problem] = []
+
+    if not graph.active:
+        return [
+            Problem("empty", "warning", "The graph is empty."),
+        ]
+
+    problems += _port_problems(graph)
+    problems += _device_problems(graph, by_id)
+    problems += _host_problems(graph)
+    problems += _timing_problems(graph)
+
+    problems.sort(key=lambda p: 0 if p.level == "error" else 1)
+    return problems
+
+
+def _port_problems(graph: Graph) -> list[Problem]:
+    out: list[Problem] = []
+    for node in graph.active:
+        try:
+            spec = node.spec
+        except KeyError:
+            out.append(
+                Problem(
+                    "unknown-type",
+                    "error",
+                    f'Unknown node type "{node.type}". '
+                    "This graph was saved by a different version.",
+                    node_id=node.id,
+                )
+            )
+            continue
+
+        for port in spec.ports:
+            if any(graph.touching(PortRef(node.id, port.id))):
+                continue
+            # A requester with nothing to ask cannot run.  A responder with
+            # nobody asking is merely unused, which is fine mid-build.
+            if port.role == "requester" and not port.oob:
+                out.append(
+                    Problem(
+                        "unwired-requester",
+                        "error",
+                        f"{node.name} has nothing on its {port.label} port.",
+                        node_id=node.id,
+                    )
+                )
+            elif port.role == "responder":
+                out.append(
+                    Problem(
+                        "unwired-responder",
+                        "warning",
+                        f"Nothing is asking {node.name} anything. It will sit idle.",
+                        node_id=node.id,
+                    )
+                )
+    return out
+
+
+def _device_problems(graph: Graph, devices: dict[str, Device]) -> list[Problem]:
+    out: list[Problem] = []
+    claims: dict[str, list[Node]] = {}
+
+    for node in graph.active:
+        spec = CATALOGUE.get(node.type)
+        if spec is None or spec.device is None:
+            continue
+        field_key = next((f.key for f in spec.fields if f.kind == "device"), None)
+        if field_key is None:
+            continue
+        bound = node.config.get(field_key)
+        if not isinstance(bound, str) or not bound:
+            out.append(
+                Problem(
+                    "unbound-device",
+                    "error",
+                    f"{node.name} has no device selected.",
+                    node_id=node.id,
+                )
+            )
+            continue
+        claims.setdefault(bound, []).append(node)
+
+    for device_id, holders in claims.items():
+        device = devices.get(device_id)
+        label = device.name if device else device_id
+
+        if device is not None and not device.available:
+            out.append(
+                Problem(
+                    "device-missing",
+                    "error",
+                    f"{label} is not present. Plug it in, or pick another.",
+                    node_id=holders[0].id,
+                )
+            )
+
+        if len(holders) > 1:
+            names = " and ".join(n.name for n in holders)
+            out.append(
+                Problem(
+                    "device-contended",
+                    "error",
+                    f"{names} both claim {label}. One device cannot be a target "
+                    "and an initiator at the same time — the failure that comes "
+                    "out of trying is a timeout, not a message.",
+                    node_id=holders[1].id,
+                )
+            )
+    return out
+
+
+def _host_problems(graph: Graph) -> list[Problem]:
+    out: list[Problem] = []
+    host_of = {n.id: (n.host or "") for n in graph.active}
+
+    for edge in graph.edges:
+        source_host = host_of.get(edge.source.node)
+        target_host = host_of.get(edge.target.node)
+        if source_host is None or target_host is None or source_host == target_host:
+            continue
+
+        target = graph.node(edge.target.node)
+        if target is None or CATALOGUE.get(target.type) is None:
+            continue
+
+        protected = any(
+            isinstance(target.config.get(key), str) and target.config[key].strip()
+            for key in ("pairing", "cafile")
+        )
+        if not protected:
+            out.append(
+                Problem(
+                    "unpaired-link",
+                    "warning",
+                    "This edge crosses machines and carries card traffic "
+                    f"unauthenticated. Set a pairing secret on {target.name}, "
+                    "or tunnel it over SSH.",
+                    node_id=target.id,
+                    edge_id=edge.id,
+                )
+            )
+    return out
+
+
+def chain_latency(graph: Graph, start_id: str) -> int:
+    """Expected milliseconds per exchange along the chain starting at a node."""
+    total = 0
+    seen: set[str] = set()
+    current: str | None = start_id
+
+    while current and current not in seen:
+        seen.add(current)
+        node = graph.node(current)
+        if node is None:
+            break
+        spec = CATALOGUE.get(node.type)
+        total += spec.latency_ms if spec else 0
+        step = next(
+            (
+                e
+                for e in graph.edges
+                if e.source.node == current and e.source.port != "oob"
+            ),
+            None,
+        )
+        current = step.target.node if step else None
+
+    return total
+
+
+def _timing_problems(graph: Graph) -> list[Problem]:
+    out: list[Problem] = []
+    for node in graph.active:
+        if node.type not in CONTACTLESS_TERMINALS:
+            continue
+        ms = chain_latency(graph, node.id)
+        if ms >= TAP_BUDGET_FAIL_MS:
+            out.append(
+                Problem(
+                    "tap-budget",
+                    "error",
+                    f"This chain is about {ms} ms per exchange. A contactless "
+                    "kernel will abandon the transaction well before that.",
+                    node_id=node.id,
+                )
+            )
+        elif ms >= TAP_BUDGET_WARN_MS:
+            out.append(
+                Problem(
+                    "tap-budget",
+                    "warning",
+                    f"About {ms} ms per exchange. Close to what a contactless "
+                    "kernel will tolerate — expect dropped taps.",
+                    node_id=node.id,
+                )
+            )
+    return out
+
+
+def chain(graph: Graph) -> list[Node]:
+    """
+    The nodes a command crosses, in order.
+
+    Starts at a node that only asks, follows the edge leaving each one, and
+    stops when nothing asks further.  Out-of-band edges are skipped: they are a
+    side channel to the card rather than a step in the conversation, and
+    counting them would double the latency of any graph with an injection node.
+    """
+    roots = [
+        n
+        for n in graph.active
+        if (spec := CATALOGUE.get(n.type)) is not None
+        and any(p.role == "requester" and not p.oob for p in spec.ports)
+        and not any(p.role == "responder" for p in spec.ports)
+    ]
+    if not roots:
+        return []
+
+    out: list[Node] = []
+    seen: set[str] = set()
+    current: Node | None = roots[0]
+
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
+        out.append(current)
+        step = next(
+            (
+                e
+                for e in graph.edges
+                if e.source.node == current.id and e.source.port != "oob"
+            ),
+            None,
+        )
+        current = graph.node(step.target.node) if step else None
+
+    return out
+
+
+# ── Parsing helpers ─────────────────────────────────────────────────────────
+
+
+def _node_from(entry: Any, index: int) -> Node:
+    if not isinstance(entry, dict):
+        raise GraphError(f"Node {index} is not a mapping.")
+
+    node_id = _require_str(entry.get("id"), f"nodes[{index}].id")
+    type_key = _require_str(entry.get("type"), f"nodes[{index}].type")
+    if CATALOGUE.get(type_key) is None:
+        raise GraphError(
+            f'Node "{node_id}" has type "{type_key}", which this build does not know.'
+        )
+
+    at = entry.get("at")
+    position = (
+        (int(at[0]), int(at[1]))
+        if isinstance(at, (list, tuple)) and len(at) == 2
+        else (0, 0)
+    )
+    config = entry.get("config")
+
+    return Node(
+        id=node_id,
+        type=type_key,
+        position=position,
+        config=config if isinstance(config, dict) else {},
+        label=entry.get("label"),
+        host=entry.get("host"),
+        disabled=bool(entry.get("disabled", False)),
+    )
+
+
+def _edge_from(entry: Any, index: int, known: set[str]) -> Edge:
+    if not isinstance(entry, dict):
+        raise GraphError(f"Edge {index} is not a mapping.")
+
+    source = PortRef.parse(entry.get("from", ""), f"edges[{index}].from")
+    target = PortRef.parse(entry.get("to", ""), f"edges[{index}].to")
+
+    for ref, where in ((source, "from"), (target, "to")):
+        if ref.node not in known:
+            raise GraphError(
+                f'edges[{index}].{where} names node "{ref.node}", which is not defined.'
+            )
+
+    edge_id = entry.get("id") or f"{source}->{target}"
+    return Edge(id=str(edge_id), source=source, target=target)
+
+
+def _host_from(entry: Any, index: int) -> Host:
+    if not isinstance(entry, dict):
+        raise GraphError(f"Host {index} is not a mapping.")
+    host_id = _require_str(entry.get("id"), f"hosts[{index}].id")
+    return Host(
+        id=host_id,
+        name=str(entry.get("name") or host_id),
+        address=entry.get("address"),
+        note=entry.get("note"),
+    )
+
+
+def _node_to(node: Node) -> dict[str, Any]:
+    out: dict[str, Any] = {"id": node.id, "type": node.type}
+    if node.label:
+        out["label"] = node.label
+    if node.host:
+        out["host"] = node.host
+    if node.disabled:
+        out["disabled"] = True
+    out["at"] = [int(node.position[0]), int(node.position[1])]
+    if node.config:
+        out["config"] = node.config
+    return out
+
+
+def _require_str(value: Any, where: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise GraphError(f"{where} must be a non-empty string.")
+    return value

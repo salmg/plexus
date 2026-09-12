@@ -1,0 +1,132 @@
+/*
+ * Plexus design tokens.
+ *
+ * Two modes, one token set.  Dark is the default and the one the tool is
+ * designed around: a dim ground so a live edge and a status light are the
+ * brightest things on screen.  Light exists for screenshots, papers and
+ * daylight, and every token below has a value in both.
+ *
+ * Nothing outside this file names a colour.  If a component needs one that is
+ * not here, the token is missing — add it here rather than hard-coding, or the
+ * other mode silently breaks.
+ */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas-bg: #0b0d10;
+  --canvas-grid: #171b22;
+  --canvas-grid-major: #1e242d;
+
+  --surface: #14181e;
+  --surface-raised: #1a1f27;
+  --surface-sunken: #0e1116;
+  --surface-hover: #1f252f;
+
+  --border: #242b35;
+  --border-strong: #333c49;
+  --border-focus: #46d9a8;
+
+  --text: #dfe5ee;
+  --text-dim: #909cae;
+  --text-faint: #5d6878;
+  --text-inverse: #0b0d10;
+
+  --accent: #46d9a8;
+  --accent-dim: #2d8a6b;
+  --accent-wash: rgba(70, 217, 168, 0.12);
+
+  --port-card: #e0a145;
+  --port-card-wash: rgba(224, 161, 69, 0.16);
+  --port-terminal: #3fb6c4;
+  --port-terminal-wash: rgba(63, 182, 196, 0.16);
+  --port-iso: #a98bd6;
+  --port-iso-wash: rgba(169, 139, 214, 0.16);
+
+  --edge: #39414e;
+  --edge-live: #46d9a8;
+  --edge-invalid: #e5534b;
+  --edge-oob: #a98bd6;
+
+  --ok: #46d9a8;
+  --warn: #e0a145;
+  --danger: #e5534b;
+  --ok-wash: rgba(70, 217, 168, 0.14);
+  --warn-wash: rgba(224, 161, 69, 0.14);
+  --danger-wash: rgba(229, 83, 75, 0.14);
+
+  --shadow-panel: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --canvas-bg: #f4f6f8;
+  --canvas-grid: #e3e7ec;
+  --canvas-grid-major: #d5dbe3;
+
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #eef1f5;
+  --surface-hover: #f0f3f7;
+
+  --border: #d9dee6;
+  --border-strong: #bcc5d1;
+  --border-focus: #0d8f6b;
+
+  --text: #161a20;
+  --text-dim: #59626f;
+  --text-faint: #8b94a2;
+  --text-inverse: #ffffff;
+
+  --accent: #0d8f6b;
+  --accent-dim: #8fd0bb;
+  --accent-wash: rgba(13, 143, 107, 0.1);
+
+  --port-card: #b1731a;
+  --port-card-wash: rgba(177, 115, 26, 0.12);
+  --port-terminal: #14707d;
+  --port-terminal-wash: rgba(20, 112, 125, 0.12);
+  --port-iso: #6f4fa8;
+  --port-iso-wash: rgba(111, 79, 168, 0.12);
+
+  --edge: #aeb7c3;
+  --edge-live: #0d8f6b;
+  --edge-invalid: #c33b32;
+  --edge-oob: #6f4fa8;
+
+  --ok: #0d8f6b;
+  --warn: #b1731a;
+  --danger: #c33b32;
+  --ok-wash: rgba(13, 143, 107, 0.1);
+  --warn-wash: rgba(177, 115, 26, 0.1);
+  --danger-wash: rgba(195, 59, 50, 0.1);
+
+  --shadow-panel: 0 1px 3px rgba(20, 30, 45, 0.1);
+}
+
+:root {
+  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono",
+    Menlo, Consolas, "Liberation Mono", monospace;
+
+  --radius: 6px;
+  --radius-lg: 10px;
+
+  --rail-width: 216px;
+  --inspector-width: 320px;
+  --console-height: 232px;
+  --topbar-height: 44px;
+}
+
+/* A node editor needs room. Give the canvas back what the rails can spare
+ * before App folds the inspector away entirely below 1100px. */
+@media (max-width: 1320px) {
+  :root {
+    --rail-width: 186px;
+    --inspector-width: 284px;
+    --console-height: 200px;
+  }
+}
