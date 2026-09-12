@@ -15,11 +15,12 @@ than as silence.
 from __future__ import annotations
 
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
 
-from plexus.graph import Graph
+from plexus.graph import Graph, PortRef
 from plexus.nodes import terminal as terminal_nodes
 from plexus.nodes.card import CardUnavailable
 from plexus.nodes.terminal import find_all, gpo_for, read_records, tlv_walk
@@ -418,4 +419,411 @@ def test_a_deep_probe_sweeps_when_there_is_no_afl():
 
 
 def test_the_walker_is_not_fooled_by_padding():
-    assert list(tlv_walk(bytes.fromhex("00FF5A020102"))) == [(0x5A, bytes.fromhex("0102"))]
+    assert list(tlv_walk(bytes.fromhex("00FF5A020102"))) == [
+        (0x5A, bytes.fromhex("0102"))
+    ]
+
+
+# ── Things that were wired to nothing ───────────────────────────────────────
+
+
+def test_arming_a_second_graph_forgets_the_first():
+    """
+    `_telemetry` was only ever written per-node by `_bind`, never cleared, and
+    `Session._hello` replays all of it — so a reconnecting editor was told about
+    nodes that were not in the graph it was looking at.
+    """
+    engine = Engine(sink=Sink())
+    engine.arm(probe_over_capture())
+    assert engine.wait(timeout=10.0)
+    engine.stop()
+
+    first = set(engine._telemetry)
+    assert "p" in first and "c" in first
+
+    renamed = probe_over_capture()
+    for node in renamed.nodes:
+        node.id = node.id + "-second"
+    for edge in renamed.edges:
+        edge.source = PortRef(edge.source.node + "-second", edge.source.port)
+        edge.target = PortRef(edge.target.node + "-second", edge.target.port)
+
+    engine.arm(renamed)
+    assert engine.wait(timeout=10.0)
+    engine.stop()
+
+    assert set(engine._telemetry) == {"p-second", "c-second"}, (
+        "stale nodes from the first graph survived: %s" % sorted(engine._telemetry)
+    )
+    # Edge *ids* come from the file and are not derived from node ids, so the
+    # requirement is that they are this graph's edges — not that they were
+    # renamed along with the nodes.
+    assert set(engine._edge_ids) == {e.id for e in renamed.edges}
+    assert set(engine._edges) == {e.id for e in renamed.edges}
+
+
+def test_the_timing_node_is_actually_called():
+    """
+    `Swtx.note_elapsed` existed, said in its own docstring that the engine
+    called it after each exchange, and was called by nothing — so the Timing
+    node bound, passed traffic through and counted zero.
+    """
+    from plexus.graph import Edge, Node
+    from plexus.graph import PortRef as Ref
+
+    graph = probe_over_capture()
+    graph.nodes.insert(
+        1,
+        Node(
+            id="clock",
+            type="swtx",
+            position=(200, 0),
+            # Zero threshold so every exchange counts as slow; a replayed
+            # capture answers in microseconds and would never trip a real one.
+            config={"wtxm": 4, "thresholdMs": 0},
+        ),
+    )
+    graph.edges = [
+        Edge("p->clock", Ref("p", "card"), Ref("clock", "terminal")),
+        Edge("clock->c", Ref("clock", "card"), Ref("c", "terminal")),
+    ]
+
+    engine = Engine(sink=Sink())
+    engine.arm(graph)
+    assert engine.wait(timeout=10.0)
+
+    node = engine._transform_by_id["clock"]
+    assert node.requested == 4, (
+        "expected one request per exchange, got %d" % node.requested
+    )
+    assert engine.telemetry("clock").detail, "nothing surfaced that it fired"
+    assert any("more time" in line.text for line in engine.sink.logs)
+
+    engine.stop()
+
+
+def test_a_slow_card_below_the_threshold_asks_for_nothing():
+    """The counter has to mean something: a fast card must not trip it."""
+    from plexus.graph import Edge, Node
+    from plexus.graph import PortRef as Ref
+
+    graph = probe_over_capture()
+    graph.nodes.insert(
+        1,
+        Node(id="clock", type="swtx", position=(200, 0), config={"thresholdMs": 60_000}),
+    )
+    graph.edges = [
+        Edge("p->clock", Ref("p", "card"), Ref("clock", "terminal")),
+        Edge("clock->c", Ref("clock", "card"), Ref("c", "terminal")),
+    ]
+
+    engine = Engine(sink=Sink())
+    engine.arm(graph)
+    assert engine.wait(timeout=10.0)
+    assert engine._transform_by_id["clock"].requested == 0
+    engine.stop()
+
+
+def test_a_chain_broken_by_a_disabled_node_binds_nothing():
+    """
+    Parity has teeth here: when `chain` walked into disabled nodes the engine
+    armed four nodes on a graph the editor drew as three, and drove a node the
+    editor had greyed out. Truncated, the chain is one node long, and one node
+    is not a conversation — so `arm` refuses before opening anything.
+    """
+    graph = probe_over_capture(
+        extra_nodes="""
+          - id: x
+            type: trace
+            at: [200, 0]
+            config: {detail: raw, path: "logs/parity.jsonl"}
+        """,
+        extra_edges="""
+          - from: p:card
+            to: x:terminal
+        """,
+    )
+    graph.node("x").disabled = True
+
+    engine = Engine(sink=Sink())
+    with pytest.raises(EngineError) as refused:
+        engine.arm(graph)
+    assert "No complete chain" in str(refused.value)
+    assert engine.state == "faulted"
+    # Nothing opened: no card, no transforms, no telemetry for a parked node.
+    assert engine._card is None
+    assert engine._transforms == []
+    assert "x" not in engine._telemetry
+
+
+# ── Breakpoints ─────────────────────────────────────────────────────────────
+#
+# The catalogue has always said a breakpoint holds a command "until you release
+# it from the console". For a while nothing could: no verb reached
+# `Breakpoint.release`, so a hit wedged the run, `tx` parked the thread that
+# would have carried the release, and `stop` was the only way out — and `stop`
+# called `release` rather than `close`, which re-armed the breakpoint for the
+# driver's next command. None of this had a test. This is that test.
+
+
+def breakpoint_over_capture(match_ins: str = "A8", editable: bool = True) -> Graph:
+    return probe_over_capture(
+        extra_nodes="""
+          - id: x
+            type: breakpoint
+            at: [200, 0]
+            config: {matchIns: "%s", editable: %s}
+        """
+        % (match_ins, "true" if editable else "false"),
+        extra_edges="""
+          - from: p:card
+            to: x:terminal
+        """,
+    )
+
+
+def until(predicate, timeout: float = 5.0, what: str = "the condition") -> None:
+    """Spin until `predicate()`, or fail. The driver runs on its own thread."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.005)
+    raise AssertionError("%s never became true within %.1fs" % (what, timeout))
+
+
+def test_a_breakpoint_announces_the_command_it_is_holding():
+    """
+    A silent breakpoint is an unreleasable one: the node id and the bytes are
+    exactly what you need in order to release it, and for a while the only way
+    to learn either was to read the source.
+    """
+    engine = Engine(sink=Sink())
+    engine.arm(breakpoint_over_capture())
+    try:
+        until(lambda: engine.held() == ["x"], what="the breakpoint holding")
+
+        said = [line.text for line in engine.sink.logs if "holding" in line.text]
+        assert any(text.startswith("x is holding 80A8000002830000") for text in said)
+        assert engine.telemetry("x").detail == "holding 80A8000002830000"
+    finally:
+        engine.stop()
+
+
+def test_a_held_breakpoint_is_released_from_the_console():
+    from plexus.api import console
+
+    engine = Engine(sink=Sink())
+    graph = breakpoint_over_capture()
+    engine.arm(graph)
+    try:
+        until(lambda: engine.held() == ["x"], what="the breakpoint holding")
+
+        lines, level = console.run(engine, graph, "release")
+        assert level is None
+        assert lines == ["x released."]
+
+        assert engine.wait(timeout=5.0), "the driver did not finish after release"
+        commands = [e.hex for e in engine.sink.apdus if e.direction == "command"]
+        assert "80A8000002830000" in commands
+        assert engine.held() == []
+    finally:
+        engine.stop()
+
+
+def test_a_held_command_can_be_released_as_different_bytes():
+    from plexus.api import console
+
+    engine = Engine(sink=Sink())
+    graph = breakpoint_over_capture()
+    engine.arm(graph)
+    try:
+        until(lambda: engine.held() == ["x"], what="the breakpoint holding")
+        lines, level = console.run(engine, graph, "release 80A8000002831234")
+        assert level is None
+        assert lines == ["x released as 80A8000002831234."]
+        # The card was asked the replacement, not what the probe wrote.
+        until(
+            lambda: any(
+                e.hex == "80A8000002831234"
+                for e in engine.sink.apdus
+                if e.direction == "command"
+            ),
+            what="the replacement reaching the card",
+        )
+    finally:
+        engine.stop()
+
+
+def test_a_breakpoint_that_forbids_editing_says_so():
+    from plexus.api import console
+
+    engine = Engine(sink=Sink())
+    graph = breakpoint_over_capture(editable=False)
+    engine.arm(graph)
+    try:
+        until(lambda: engine.held() == ["x"], what="the breakpoint holding")
+        lines, level = console.run(engine, graph, "release 80A8000002831234")
+        assert level == "error"
+        assert "does not allow editing" in lines[0]
+        assert engine.held() == ["x"], "a refused release must not let it go"
+    finally:
+        engine.stop()
+
+
+def test_release_with_nothing_held_says_so_rather_than_waiting():
+    from plexus.api import console
+
+    engine = Engine(sink=Sink())
+    lines, level = console.run(engine, None, "release")
+    assert level == "error"
+    assert "Nothing is held" in lines[0]
+
+
+def test_tx_refuses_while_a_breakpoint_is_holding():
+    """
+    `tx` used to park on the chain lock the held exchange owns — on the thread
+    the server reads frames from, so the `release` that would free it could
+    never arrive. It refuses, and names what is in the way.
+    """
+    from plexus.api import console
+
+    engine = Engine(sink=Sink())
+    graph = breakpoint_over_capture()
+    engine.arm(graph)
+    try:
+        until(lambda: engine.held() == ["x"], what="the breakpoint holding")
+
+        started = time.monotonic()
+        lines, level = console.run(engine, graph, "tx 00B2010C00")
+        assert time.monotonic() - started < 1.0, "tx waited instead of refusing"
+        assert level == "error"
+        assert "x is holding a command" in lines[0]
+    finally:
+        engine.stop()
+
+
+def test_releasing_a_breakpoint_does_not_disarm_it():
+    """
+    Stepping: release the held command and the next one is caught too. This is
+    the intended behaviour of the node, and it is also the reason `stop` cannot
+    use `release` — see the test below.
+    """
+    from plexus.api import console
+
+    engine = Engine(sink=Sink())
+    graph = breakpoint_over_capture(match_ins="")
+    engine.arm(graph)
+    try:
+        until(lambda: engine.held() == ["x"], what="the first command being held")
+        first = engine._transform_by_id["x"].held
+
+        console.run(engine, graph, "release")
+
+        until(
+            lambda: engine.held() == ["x"]
+            and engine._transform_by_id["x"].held not in (None, first),
+            what="the next command being held too",
+        )
+    finally:
+        engine.stop()
+
+
+def test_stop_disarms_the_breakpoint_rather_than_merely_releasing_it(monkeypatch):
+    """
+    `stop` used to call `release`, which sets the event and leaves the
+    breakpoint armed. `_release` closes it a moment later, so most of the time
+    the stop flag wins: the driver checks it and leaves without sending
+    anything else, and nothing shows.
+
+    The window is between the release loop and the join. A driver that sends
+    two commands per stop check is inside that window by construction, so this
+    is the race made deterministic: the second command is caught by a
+    breakpoint nobody will release, the join expires, and the card is
+    disconnected under a live exchange. `close` disarms, so there is no second
+    catch.
+    """
+
+    class TwoPerCheck:
+        """A terminal that asks twice between stop checks. Real ones do too."""
+
+        def drive(self, channel, stop):
+            while not stop():
+                channel.transmit(bytes.fromhex("00A404000E325041592E5359532E444446303100"))
+                channel.transmit(bytes.fromhex("00A4040007A000000004101000"))
+
+    monkeypatch.setattr(
+        terminal_nodes, "build", lambda node_type, config: TwoPerCheck()
+    )
+
+    engine = Engine(sink=Sink())
+    engine.arm(breakpoint_over_capture(match_ins=""))
+    until(lambda: engine.held() == ["x"], what="the first command being held")
+
+    started = time.monotonic()
+    engine.stop(timeout=2.0)
+    elapsed = time.monotonic() - started
+
+    warnings = [line.text for line in engine.sink.logs if line.level == "warn"]
+    assert not [w for w in warnings if "did not stop in time" in w], (
+        "the driver was caught again by a breakpoint stop had only released"
+    )
+    assert not [w for w in warnings if "still in flight" in w]
+    assert elapsed < 1.5, "stop waited out the join (%.1fs)" % elapsed
+    assert engine.state == "stopped"
+
+
+def test_arming_again_releases_what_the_last_run_left_bound():
+    """
+    `running` only asks whether the relay thread is alive, and a finished probe
+    leaves it dead with the card still open on purpose — that is what keeps
+    `tx` useful. The editor shows Run again in exactly that state, so the next
+    press reached `arm` with a card bound, and `_bind` overwrote it without
+    closing it: one reader claimed twice, and nothing holding the first claim.
+    """
+    engine = Engine(sink=Sink())
+    graph = probe_over_capture()
+
+    engine.arm(graph)
+    assert engine.wait(timeout=5.0), "the driver did not finish"
+    assert engine.running is False
+    first = engine._card
+    assert first is not None, "a finished probe keeps the card bound"
+
+    closed = []
+    first.disconnect = lambda: closed.append("card")
+
+    engine.arm(graph)
+    try:
+        assert closed == ["card"], "the first card was left claimed"
+        assert engine._card is not first
+        assert any(
+            "Releasing what the last run left bound" in line.text
+            for line in engine.sink.logs
+        )
+    finally:
+        engine.stop()
+
+
+def test_arming_again_after_a_fault_releases_too():
+    """
+    The other path that leaves a dead thread over a bound rig:
+    `_release_if_idle` keeps everything so a fault can be inspected.
+    """
+    engine = Engine(sink=Sink())
+    graph = probe_over_capture()
+    engine.arm(graph)
+    assert engine.wait(timeout=5.0)
+
+    # Stand in for a driver that died: mark faulted with the rig still bound,
+    # which is the state `_release_if_idle` produces.
+    engine._set_state("faulted", "stand-in")
+    first = engine._card
+    closed = []
+    first.disconnect = lambda: closed.append("card")
+
+    engine.arm(graph)
+    try:
+        assert closed == ["card"]
+    finally:
+        engine.stop()

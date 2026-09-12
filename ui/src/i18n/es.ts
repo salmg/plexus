@@ -150,6 +150,14 @@ export const es: Record<string, string> = {
   "check.empty": "El grafo está vacío. Arrastra un nodo de la paleta para empezar.",
   "check.unknownType":
     "Tipo de nodo desconocido «{type}». Este grafo se guardó con otra versión.",
+  "check.selfEdge":
+    "{node} está conectado a sí mismo. Un nodo no puede hablar consigo mismo.",
+  "check.unknownPort":
+    "No hay ningún puerto «{port}» en {node}.",
+  "check.portContended":
+    "El puerto {port} de {node} está conectado dos veces.",
+  "check.cycle":
+    "Estos nodos forman un bucle: {nodes}. Una conversación tiene que acabar en algún sitio.",
   "check.unwiredRequester":
     "{node} no tiene nada en su puerto {port}. Conéctalo a algo que responda.",
   "check.unwiredResponder": "Nadie le pregunta nada a {node}. Se quedará inactivo.",

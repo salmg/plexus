@@ -119,7 +119,9 @@ class Sink:
     def state(self, state: str, detail: Optional[str] = None) -> None:
         with self._lock:
             self.states.append({"state": state, "detail": detail})
-        self.emit({"type": "state", "state": state, **({"detail": detail} if detail else {})})
+        self.emit(
+            {"type": "state", "state": state, **({"detail": detail} if detail else {})}
+        )
 
     def node(self, node_id: str, telemetry: NodeTelemetry) -> None:
         with self._lock:

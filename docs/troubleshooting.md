@@ -74,7 +74,7 @@ until you press Load.
 `pip install -e .` was not run, or not in the environment on your `PATH`.
 `python -m plexus.cli` does the same thing without the entry point.
 
-### `No catalogue at …/schema/catalogue.json`
+### `No catalogue at …/plexus/schema/catalogue.json`
 
 The Python side reads the catalogue the editor exports. Regenerate it:
 

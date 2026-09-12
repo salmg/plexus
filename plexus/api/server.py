@@ -32,17 +32,19 @@ needs a browser, which always sends one and never lets a page forge it.
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import json
 import logging
 import os
 import secrets
+from contextlib import asynccontextmanager
 from typing import Optional, Set
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
-from plexus.api.session import PROTOCOL_VERSION, ProtocolMismatch, Session
+from plexus.api.session import PROTOCOL_VERSION, ProtocolMismatch, Runtime, Session
 from plexus.runtime import node_implementations
 
 log = logging.getLogger(__name__)
@@ -128,7 +130,9 @@ def guard_bind(host: str) -> None:
     if is_loopback(host):
         return
     if os.environ.get(TOKEN_VARIABLE):
-        log.warning("Serving on %s — reachable beyond this machine. Token auth is on.", host)
+        log.warning(
+            "Serving on %s — reachable beyond this machine. Token auth is on.", host
+        )
         return
     raise SystemExit(
         "\nRefusing to bind %s without authentication.\n\n"
@@ -148,11 +152,27 @@ def token_ok(offered: Optional[str]) -> bool:
 
 
 def create_app() -> FastAPI:
+    # One runtime for the process, not one per socket. PROTOCOL.md promises
+    # that losing the socket is not losing the run; a per-connection engine
+    # made that false, and made a browser reload release the card in the middle
+    # of a transaction.
+    runtime = Runtime()
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        yield
+        # The run outlives a socket, not the process. Whatever is still bound
+        # when the server goes down is released here, and this is the only
+        # place left that releases without being asked.
+        await asyncio.get_event_loop().run_in_executor(None, runtime.engine.stop)
+
     app = FastAPI(
         title="Plexus runtime",
         version="0.1.0",
         description="Binds a Plexus graph to real hardware and drives it.",
+        lifespan=lifespan,
     )
+    app.state.runtime = runtime
 
     @app.get("/api/health")
     async def health() -> JSONResponse:
@@ -174,7 +194,9 @@ def create_app() -> FastAPI:
         # The one that stops a page the operator happens to be visiting from
         # arming a card relay. See the module docstring.
         if not origin_ok(socket.headers.get("origin")):
-            log.warning("refused a websocket from origin %r", socket.headers.get("origin"))
+            log.warning(
+                "refused a websocket from origin %r", socket.headers.get("origin")
+            )
             await socket.close(code=4403)
             return
 
@@ -184,7 +206,7 @@ def create_app() -> FastAPI:
             return
 
         await socket.accept()
-        session = Session(socket.send_json)
+        session = Session(socket.send_json, runtime)
         await session.start()
 
         try:
@@ -205,23 +227,30 @@ def create_app() -> FastAPI:
                 try:
                     message = json.loads(raw)
                 except ValueError:
-                    await socket.send_json({"type": "error", "message": "Frames are JSON."})
+                    await socket.send_json(
+                        {"type": "error", "message": "Frames are JSON."}
+                    )
                     continue
                 if not isinstance(message, dict):
                     await socket.send_json(
                         {"type": "error", "message": "Frames are objects."}
                     )
                     continue
-                await session.handle(message)
+                await session.dispatch(message)
         except WebSocketDisconnect:
-            log.info("editor disconnected")
+            if session.engine.running:
+                log.info("editor disconnected; the relay is still running")
+            else:
+                log.info("editor disconnected")
         except ProtocolMismatch:
             await socket.close(code=4400)
         except Exception:  # noqa: BLE001 - one bad editor must not kill the process
             log.exception("session failed")
         finally:
-            # The relay keeps hardware claimed, so releasing it is the one
-            # thing that must happen however this connection ended.
+            # Detaches this socket's listener and cancels its tasks. It does
+            # *not* release the hardware: the run belongs to the process, and
+            # the promise in PROTOCOL.md is that a reconnecting editor finds it
+            # still going. `stop`, or the process ending, releases it.
             await session.close()
 
     return app

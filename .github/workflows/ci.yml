@@ -1,0 +1,165 @@
+# The gate this project was missing.
+#
+# Two things had already slipped through without it. `ui/scripts/export-catalogue.mjs`
+# claimed in its own docstring that "CI fails if the checked-in file is stale" when there
+# was no CI at all, so nothing guarded catalogue drift. And a `*.jsonl` line in .gitignore
+# left a test fixture untracked — the suite was green on the machine that wrote it and
+# broken for everyone else.
+#
+# So the jobs below are chosen for what actually broke here, not for completeness:
+# check out WITHOUT the developer's working tree, prove the catalogue has not drifted,
+# and run both languages' checks.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # A fresh checkout, which is the thing the developer's machine can never test.
+  # With the submodule, because the engine suite drives atrium's own mutation engine
+  # and its recorded transport.
+  python:
+    name: python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.8 is the declared floor in pyproject.toml; 3.12 is what a rig will have.
+        # Both, because the codebase is written to the older one deliberately.
+        python: ["3.8", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        # The config selected rules the code did not satisfy, and nothing ran
+        # it. Now something does.
+        run: ruff check plexus tests
+
+      - name: Test
+        run: pytest -q
+
+  # The claim that the model half needs nothing but PyYAML, checked rather than
+  # asserted: no submodule, no runtime extra, and the graph and repo suites still pass.
+  # If someone reaches for atrium from plexus/graph.py, this is where it surfaces.
+  model-without-atrium:
+    name: model half stands alone
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # deliberately no submodules
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the base package only
+        run: pip install -e . && pip install pytest
+
+      - name: The graph model and repo integrity, with atrium absent
+        run: pytest -q tests/test_graph.py tests/test_repo.py
+
+      - name: The CLI answers without atrium
+        run: |
+          plexus nodes
+          plexus check examples/contactless-relay.plexus.yaml
+          plexus show examples/contactless-relay.plexus.yaml
+
+  # The way the tool reaches someone who did not clone it. An editable install
+  # keeps the source tree on sys.path, which hides a whole class of packaging
+  # bug: the catalogue lived outside the package for a while, so `pip install .`
+  # produced a `plexus` command that could not answer one subcommand. Nothing
+  # here was capable of noticing, because nobody develops that way.
+  installed:
+    name: a real install can answer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # deliberately no submodules: the model half must install and answer
+        # without atrium, which is what someone gets on first contact.
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install, not editable
+        run: pip install .
+
+      - name: Answer from outside the source tree
+        # `cd /tmp` matters: from the repository root, the source tree is on
+        # sys.path and an install this broken would still appear to work.
+        run: |
+          cd /tmp
+          plexus nodes
+          python -c "import plexus.catalogue as c; print(c.CATALOGUE_PATH); assert c.CATALOGUE_PATH.exists(); assert len(c.CATALOGUE.types) > 10"
+
+  # The parity invariant: the catalogue is authored in TypeScript and read by Python,
+  # and a stale plexus/schema/catalogue.json means the two sides disagree about what a node is.
+  catalogue:
+    name: catalogue is not stale
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - run: npm ci
+        working-directory: ui
+
+      - name: Regenerate and diff
+        working-directory: ui
+        run: |
+          npm run export:catalogue
+          if ! git diff --exit-code -- ../plexus/schema/catalogue.json; then
+            echo
+            echo "plexus/schema/catalogue.json is stale."
+            echo "Run 'npm run export:catalogue' in ui/ and commit the result."
+            exit 1
+          fi
+
+  editor:
+    name: editor typecheck, lint and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - run: npm ci
+        working-directory: ui
+
+      - run: npx tsc -b
+        working-directory: ui
+
+      - run: npx oxlint src
+        working-directory: ui
+
+      - run: npx vite build
+        working-directory: ui

@@ -52,7 +52,7 @@ def _inside(candidate: Path, root: Path) -> bool:
 def resolve_read(raw: str, *, what: str = "file") -> Path:
     """A path a node may read. Must exist, and must be inside the workspace."""
     root = workspace()
-    target = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
+    target = Path(raw).resolve() if Path(raw).is_absolute() else (root / raw).resolve()
 
     if not _inside(target, root):
         raise PathRefused(
@@ -73,7 +73,7 @@ def resolve_write(raw: str, *, what: str = "file") -> Path:
     directory it lands in is created under the workspace and nowhere else.
     """
     root = workspace()
-    target = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
+    target = Path(raw).resolve() if Path(raw).is_absolute() else (root / raw).resolve()
 
     if not _inside(target, root):
         raise PathRefused(

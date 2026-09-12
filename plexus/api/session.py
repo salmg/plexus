@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import queue
 import threading
+from collections import deque
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from plexus.api import console
@@ -35,24 +35,101 @@ BATCH_WINDOW_S = 0.025
 
 #: Frames held before the trace starts thinning. Roughly a second of a fast
 #: relay, which is more than a person can read and less than a memory problem.
-QUEUE_LIMIT = 2000
+STREAM_LIMIT = 2000
+
+#: Frames from the editor waiting to be worked, in order. Small on purpose: an
+#: editor sends one thing at a time, so a queue this deep is a client bug or an
+#: attempt to make the runtime hold work it will never get to.
+INBOX_LIMIT = 32
 
 PROTOCOL_VERSION = 1
 
 Sender = Callable[[Dict[str, Any]], Awaitable[None]]
 
+class Runtime:
+    """
+    The engine, owned by the process rather than by a socket.
+
+    PROTOCOL.md promises that losing the socket is not losing the run, and for
+    a while that was simply false: every connection built its own Engine and
+    `Session.close` stopped it, so a browser reload released the card in the
+    middle of a transaction, and a reconnecting editor was talking to a
+    different engine that had never been armed. The replay in `_hello` was
+    written for exactly this and had nothing to replay.
+
+    So: one engine, and a list of listeners it writes to — which is empty
+    whenever nobody is connected. That is the normal state of a relay someone
+    left running, and the frames it produces in the meantime are dropped
+    rather than queued, because there is nobody to tell and the run must not
+    wait for one to arrive.
+    """
+
+    def __init__(self) -> None:
+        self._listeners: List[Callable[[Dict[str, Any]], None]] = []
+        self._listeners_lock = threading.Lock()
+        self.engine = Engine(sink=CallbackSink(self._fan_out))
+        #: The graph that is armed, or the last one offered. On the runtime
+        #: rather than the session, so `status` and `check` answer about what
+        #: is actually running after the editor that armed it has gone.
+        self.graph: Optional[Graph] = None
+
+    def _fan_out(self, frame: Dict[str, Any]) -> None:
+        """Called from whichever thread produced the frame, the relay included."""
+        with self._listeners_lock:
+            listeners = list(self._listeners)
+        for listener in listeners:
+            try:
+                listener(frame)
+            except Exception:  # pragma: no cover - a listener is not the run
+                log.debug("a frame listener failed", exc_info=True)
+
+    def attach(self, listener: Callable[[Dict[str, Any]], None]) -> None:
+        with self._listeners_lock:
+            self._listeners.append(listener)
+
+    def detach(self, listener: Callable[[Dict[str, Any]], None]) -> None:
+        with self._listeners_lock:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
+
+    @property
+    def listeners(self) -> int:
+        with self._listeners_lock:
+            return len(self._listeners)
 
 class Session:
-    """The lifetime of one editor connection."""
+    """
+    The lifetime of one editor connection.
 
-    def __init__(self, send: Sender) -> None:
+    It borrows the runtime rather than owning it. Constructing one without a
+    runtime gives it a private one, which is what a test wants and what a
+    single-shot caller gets.
+    """
+
+    def __init__(self, send: Sender, runtime: Optional["Runtime"] = None) -> None:
         self._send = send
-        self._queue: "queue.Queue[Dict[str, Any]]" = queue.Queue()
+        self._stream: "deque[Dict[str, Any]]" = deque()
+        self._latest: Dict[Any, Dict[str, Any]] = {}
+        self._states: List[Dict[str, Any]] = []
         self._dropped = 0
         self._lock = threading.Lock()
         self._pump: Optional[asyncio.Task] = None
-        self.graph: Optional[Graph] = None
-        self.engine = Engine(sink=CallbackSink(self._offer))
+        self._inbox: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue(maxsize=INBOX_LIMIT)
+        self._worker: Optional[asyncio.Task] = None
+        self.runtime = runtime if runtime is not None else Runtime()
+        self.runtime.attach(self._offer)
+
+    @property
+    def engine(self) -> Engine:
+        return self.runtime.engine
+
+    @property
+    def graph(self) -> Optional[Graph]:
+        return self.runtime.graph
+
+    @graph.setter
+    def graph(self, value: Optional[Graph]) -> None:
+        self.runtime.graph = value
 
     # ── Frames out ──────────────────────────────────────────────────────
 
@@ -60,50 +137,65 @@ class Session:
         """
         Called from whichever thread produced the frame, including the relay.
 
-        Never blocks, never raises: the caller is in the middle of an exchange.
-        """
-        if self._queue.qsize() >= QUEUE_LIMIT:
-            if frame.get("type") == "apdu":
-                with self._lock:
-                    self._dropped += 1
-                return
-            # A state or telemetry frame is worth making room for — losing one
-            # leaves the editor's picture permanently wrong, not just thinner.
-            self._drop_one_apdu()
-        self._queue.put(frame)
+        Never blocks, never raises, and never does work proportional to how far
+        behind the listener is: the caller is in the middle of an exchange with
+        a card.
 
-    def _drop_one_apdu(self) -> None:
-        held: List[Dict[str, Any]] = []
-        dropped = False
-        try:
-            while True:
-                frame = self._queue.get_nowait()
-                if not dropped and frame.get("type") == "apdu":
-                    dropped = True
-                    continue
-                held.append(frame)
-        except queue.Empty:
-            pass
-        for frame in held:
-            self._queue.put(frame)
-        if dropped:
+        Frames are sorted by what they *are*, which is what makes all three of
+        those promises keepable at once.
+        """
+        kind = frame.get("type")
+
+        if kind in ("node", "edge"):
+            # State, not events. The relay emits one of these per node and per
+            # edge on *every* exchange, and only the newest value of each means
+            # anything — so they are held by key rather than queued. This was
+            # the flood: PROTOCOL.md says node and edge frames must not be
+            # dropped, so the old code refused to drop them and grew without
+            # limit instead, while paying a full drain-and-refill of the queue
+            # for each one. Coalescing keeps the promise, bounds the memory by
+            # the size of the graph, and rebuilds an identical picture.
             with self._lock:
+                self._latest[(kind, frame.get("id"))] = frame
+            return
+
+        if kind == "state":
+            # A handful per run, and losing one leaves the editor permanently
+            # wrong rather than merely thinner. Kept, whatever happens.
+            with self._lock:
+                self._states.append(frame)
+            return
+
+        # apdu and log: a genuine stream, and the one thing PROTOCOL.md allows
+        # a runtime to thin under load. The oldest goes, in constant time.
+        with self._lock:
+            if len(self._stream) >= STREAM_LIMIT:
+                self._stream.popleft()
                 self._dropped += 1
+            self._stream.append(frame)
 
     async def start(self) -> None:
         self._pump = asyncio.ensure_future(self._run_pump())
+        self._worker = asyncio.ensure_future(self._work())
 
     async def close(self) -> None:
-        if self._pump is not None:
-            self._pump.cancel()
+        for task in (self._worker, self._pump):
+            if task is None:
+                continue
+            task.cancel()
             try:
-                await self._pump
+                await task
             except asyncio.CancelledError:
                 pass
-            self._pump = None
-        # Releasing the hardware matters more than a clean socket close, and
-        # the engine's stop is blocking, so it goes to a worker.
-        await asyncio.get_event_loop().run_in_executor(None, self.engine.stop)
+        self._worker = None
+        self._pump = None
+
+        # Deliberately *not* `engine.stop()`. This used to release the card on
+        # every disconnect, which made PROTOCOL.md's promise false in the worst
+        # way: a browser reload dropped a live relay mid-transaction. The
+        # connection ends; the run does not. `stop` ends the run, and so does
+        # the process shutting down.
+        self.runtime.detach(self._offer)
 
     async def _run_pump(self) -> None:
         while True:
@@ -111,16 +203,22 @@ class Session:
             await self.flush()
 
     async def flush(self) -> None:
-        """Send everything gathered since the last tick, as one frame if many."""
-        frames: List[Dict[str, Any]] = []
-        try:
-            while True:
-                frames.append(self._queue.get_nowait())
-        except queue.Empty:
-            pass
+        """
+        Send everything gathered since the last tick, as one frame if many.
 
+        Order within a tick: what crossed the wire, then what that did to each
+        node and edge, then where the run ended up. A state change is the
+        conclusion of the window it closes, so it reads last.
+        """
         with self._lock:
+            frames: List[Dict[str, Any]] = list(self._stream)
+            self._stream.clear()
+            frames.extend(self._latest.values())
+            self._latest.clear()
+            frames.extend(self._states)
+            del self._states[:]
             dropped, self._dropped = self._dropped, 0
+
         if dropped:
             frames.append(
                 {
@@ -136,7 +234,9 @@ class Session:
 
         if not frames:
             return
-        await self._deliver(frames[0] if len(frames) == 1 else {"type": "batch", "frames": frames})
+        await self._deliver(
+            frames[0] if len(frames) == 1 else {"type": "batch", "frames": frames}
+        )
 
     async def _deliver(self, frame: Dict[str, Any]) -> None:
         try:
@@ -145,6 +245,48 @@ class Session:
             log.debug("send failed; the editor has gone", exc_info=True)
 
     # ── Frames in ───────────────────────────────────────────────────────
+
+    async def dispatch(self, message: Dict[str, Any]) -> None:
+        """
+        One frame from the read loop, which must not be made to wait.
+
+        `arm` and `command` both block on hardware — `arm` opens a reader,
+        `tx` waits for a card — and the read loop used to await each handler in
+        turn. So a `stop` sent while a command was in flight sat unread behind
+        the very thing it was meant to interrupt: measured at four seconds for
+        a four-second command, with the editor's button stuck on Stop for all
+        of it.
+
+        Those two go on a queue worked by one task, so they keep their order
+        relative to each other and the read loop returns at once. Everything
+        else is answered here: `stop` because it is the frame that has to
+        overtake, `hello` because its refusal has to reach the read loop in
+        order to close the socket with the right code.
+        """
+        if message.get("type") in ("arm", "command"):
+            try:
+                self._inbox.put_nowait(message)
+            except asyncio.QueueFull:
+                await self._deliver(
+                    {
+                        "type": "error",
+                        "message": "Too many frames in flight; wait for the "
+                        "ones already sent to answer.",
+                    }
+                )
+            return
+        await self.handle(message)
+
+    async def _work(self) -> None:
+        """The one worker for frames that block. Order in, order out."""
+        while True:
+            message = await self._inbox.get()
+            try:
+                await self.handle(message)
+            except Exception:  # noqa: BLE001 - one bad frame is not the session
+                log.exception("frame %r failed", message.get("type"))
+            finally:
+                self._inbox.task_done()
 
     async def handle(self, message: Dict[str, Any]) -> None:
         """One frame from the editor."""
@@ -214,7 +356,9 @@ class Session:
         request_id = message.get("id")
         line = message.get("line")
         if not isinstance(request_id, str) or not isinstance(line, str):
-            await self._deliver({"type": "error", "message": "command needs an id and a line."})
+            await self._deliver(
+                {"type": "error", "message": "command needs an id and a line."}
+            )
             return
 
         # `tx` reaches the card, so it runs off the event loop like everything
@@ -228,10 +372,8 @@ class Session:
         await self.flush()
         await self._deliver(frame)
 
-
 class ProtocolMismatch(RuntimeError):
     """The editor asked for a protocol version this runtime does not speak."""
-
 
 def _graph_from_frame(raw: Dict[str, Any]) -> Graph:
     """
@@ -244,7 +386,6 @@ def _graph_from_frame(raw: Dict[str, Any]) -> Graph:
     import yaml
 
     return Graph.from_yaml(yaml.safe_dump(_normalise(raw), sort_keys=False))
-
 
 def _normalise(raw: Dict[str, Any]) -> Dict[str, Any]:
     """Turn the editor's JSON node shape into the file's."""

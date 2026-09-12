@@ -74,7 +74,9 @@ def load_recorded_card(path: str | Path, strict: bool = False) -> Any:
     try:
         from transport.recorded import RecordedCardError, RecordedCardTransport
     except ImportError as exc:  # pragma: no cover - only if atrium moves
-        raise AtriumUnavailable(f"atrium's recorded transport will not import: {exc}") from exc
+        raise AtriumUnavailable(
+            f"atrium's recorded transport will not import: {exc}"
+        ) from exc
 
     try:
         return RecordedCardTransport(str(path), strict=strict)
@@ -97,7 +99,9 @@ def load_mutation_engine(config_path: str | Path, card_execute=None) -> Any:
     try:
         from mutation_engine import MutationEngine
     except ImportError as exc:  # pragma: no cover - only if atrium moves
-        raise AtriumUnavailable(f"atrium's mutation engine will not import: {exc}") from exc
+        raise AtriumUnavailable(
+            f"atrium's mutation engine will not import: {exc}"
+        ) from exc
 
     holder = _ExecuteHolder(card_execute) if card_execute else None
     return MutationEngine.from_config(str(config_path), os=holder)

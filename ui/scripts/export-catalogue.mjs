@@ -1,5 +1,5 @@
 /**
- * Emit schema/catalogue.json from the TypeScript catalogue.
+ * Emit plexus/schema/catalogue.json from the TypeScript catalogue.
  *
  * The catalogue describes ports, config fields and latency costs, and both ends
  * need it: the editor to draw and validate, the runtime to build and check the
@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { NODE_TYPES } from "../src/catalogue/index.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const out = resolve(here, "../../schema/catalogue.json");
+const out = resolve(here, "../../plexus/schema/catalogue.json");
 
 const document = {
   $comment:

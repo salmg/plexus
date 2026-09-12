@@ -78,8 +78,16 @@ order, so batching is invisible to everything above the transport.
 
 The editor keeps a ring buffer of the last few hundred APDUs, because that is
 what a person can scroll. The full trace belongs in a file the runtime writes.
-A runtime is free to drop `apdu` frames under load — it must not drop `node`,
-`edge` or `state`.
+A runtime is free to drop `apdu` and `log` frames under load — it must not drop
+`node`, `edge` or `state`. Those two rules together are only satisfiable if
+`node` and `edge` frames are treated as *state* rather than as events: a relay
+emits one of each per node and per edge on every exchange, so a runtime that
+queues them and refuses to drop them grows without limit. Keep the newest value
+per id and send that, which is all the editor does with them anyway. The Python
+runtime coalesces exactly that way, reports how many `apdu` and `log` frames it
+thinned in a `log` line, and does all of it in constant time — the queue is
+written from the thread driving the card, and work proportional to how far
+behind the listener is turns a slow listener into a dropped tap.
 
 ## Console commands
 
@@ -96,6 +104,19 @@ devices               hardware the runtime can see
 tx <hex>              push one command APDU through the chain
 pause / resume        hold traffic without unbinding
 ```
+
+The Python runtime adds one more, because it has a node the simulator does not:
+
+```
+release [node] [hex]  let a held breakpoint go, with different bytes or not
+```
+
+A breakpoint announces itself the moment it catches something — a `log` frame
+naming the node and the bytes, and a `node` frame whose detail says what is
+held — because those are exactly what you need in order to release it. `tx`
+refuses while anything is held rather than waiting its turn: the runtime reads
+frames on one thread, so a parked `tx` would block the `release` that would
+free it.
 
 `clear` is handled in the editor and never reaches the runtime.
 

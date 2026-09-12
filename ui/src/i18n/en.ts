@@ -139,6 +139,14 @@ export const en = {
   "check.empty": "The graph is empty. Drag a node from the palette to start.",
   "check.unknownType":
     "Unknown node type “{type}”. This graph was saved by a different version.",
+  "check.selfEdge":
+    "{node} is wired to itself. A node cannot talk to itself.",
+  "check.unknownPort":
+    "No port “{port}” on {node}.",
+  "check.portContended":
+    "The {port} port on {node} is wired twice.",
+  "check.cycle":
+    "These nodes form a loop: {nodes}. A conversation has to end somewhere.",
   "check.unwiredRequester":
     "{node} has nothing on its {port} port. Wire it to something that answers.",
   "check.unwiredResponder": "Nothing is asking {node} anything. It will sit idle.",

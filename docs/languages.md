@@ -90,7 +90,7 @@ but German compounds and long Spanish phrases both fit today, so check the top
 bar and the palette after a pass.
 
 **Node titles, summaries, caveats and field labels are not in `en.ts`.** They
-live in the catalogue, which is also what `schema/catalogue.json` exports to
+live in the catalogue, which is also what `plexus/schema/catalogue.json` exports to
 the Python side — duplicating them would give the project two canonical
 Englishes to keep in step. So only the *other* languages carry node keys, and
 the key shapes are derived from the catalogue's own names:

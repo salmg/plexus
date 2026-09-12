@@ -69,7 +69,8 @@ class NotHereYet:
 
     def connect(self) -> None:
         raise CardUnavailable(
-            f"The {self.node_type} node is not implemented in this build. It needs {self.needs}."
+            f"The {self.node_type} node is not implemented in this build. "
+            f"It needs {self.needs}."
         )
 
     def get_atr(self) -> bytes:

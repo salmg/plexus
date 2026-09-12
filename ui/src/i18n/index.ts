@@ -4,7 +4,7 @@
  * Three things shaped this.
  *
  * **English stays where it already is.** Node titles, summaries and caveats
- * live in the catalogue, which is also what `schema/catalogue.json` exports to
+ * live in the catalogue, which is also what `plexus/schema/catalogue.json` exports to
  * the Python side. Copying them into an English dictionary would give the
  * project two canonical Englishes to keep in step, so instead a lookup misses
  * and falls back to the catalogue's own text. Only Spanish carries node keys.

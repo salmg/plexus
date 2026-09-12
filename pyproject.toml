@@ -8,9 +8,13 @@ version = "0.1.0"
 description = "A node canvas for atrium: wire readers, phones and mutations into a relay you can see."
 readme = "README.md"
 # The model, the checks and the CLI are plain Python and run on 3.8, which is
-# what some of the machines this gets opened on happen to have. The `runtime`
-# extra is the half that imports atrium, and atrium wants 3.11+ — that floor
-# arrives with the dependency rather than being imposed on everyone here.
+# what some of the machines this gets opened on happen to have.
+#
+# The `runtime` extra is the *server* — FastAPI and uvicorn — not atrium.
+# Atrium arrives as a submodule under vendor/, so it is not a dependency here
+# at all and its own floor is not expressible in this file. What that means in
+# practice: `pip install -e .` gives you a working model and CLI on 3.8; the
+# engine suite needs the submodule checked out, and atrium wants 3.11+.
 requires-python = ">=3.8"
 license = { text = "MIT" }
 
@@ -39,12 +43,42 @@ plexus = "plexus.cli:main"
 [tool.setuptools.packages.find]
 include = ["plexus*"]
 
+# Stated rather than inherited. `include-package-data` defaults to true for a
+# pyproject-configured build, so the catalogue would come along anyway now that
+# it sits inside the package — but that default is a setuptools decision, not
+# ours, and the file it carries is the one table both halves of this project
+# agree on. Naming it means a future `include-package-data = false`, or a move
+# to another backend, fails loudly instead of shipping a `plexus` command that
+# cannot answer a single subcommand.
+[tool.setuptools.package-data]
+plexus = ["schema/*.json"]
+
 [tool.ruff]
 line-length = 90
 target-version = "py38"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+# pyupgrade's advice is for a codebase with a newer floor than this one. These
+# four are not style preferences, they are the consequences of `requires-python
+# = ">=3.8"`, and the config is narrowed rather than the code rewritten:
+#
+#   UP006/UP045  `List[x]` and `Optional[x]`. Safe to modernise only in
+#                annotations, and only because of `from __future__ import
+#                annotations` — but this codebase also puts them in runtime
+#                positions, and having two spellings by position is worse than
+#                one spelling everywhere.
+#   UP031        `%` formatting. Used deliberately and consistently for
+#                user-facing messages; f-strings are used where the expression
+#                is the point. Both are fine, and churning 79 of them would
+#                have been the whole of this change.
+#   UP037        quoted annotations, which are still how a forward reference to
+#                a class defined later in the same module is written here.
+#
+# Ruff was not run at all before this. It is in CI now, so what is selected
+# here is what the code actually satisfies.
+ignore = ["UP006", "UP031", "UP037", "UP045"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

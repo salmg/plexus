@@ -21,6 +21,7 @@ that makes a transform's two hooks bracket the same exchange.
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from typing import Callable, List, Optional, Protocol, runtime_checkable
@@ -109,17 +110,54 @@ class Chain:
     def paused(self) -> bool:
         return not self._resumed.is_set()
 
+    @contextlib.contextmanager
+    def exclusive(self, timeout: float = 0.0):
+        """
+        Hold the chain so nothing can begin an exchange on it.
+
+        Yields True when it was actually obtained. `Engine.stop` uses this to
+        disconnect the card only while no command is in flight: a join that
+        timed out leaves the driver mid-exchange, and pulling the card out from
+        under a command leaves it in a state nobody can describe — which is the
+        thing `stop` exists to avoid. Releasing anyway beats never releasing,
+        so a refusal is reported rather than raised.
+        """
+        got = self._lock.acquire(timeout=timeout)
+        try:
+            yield got
+        finally:
+            if got:
+                self._lock.release()
+
     def get_atr(self) -> bytes:
         with self._lock:
             return self._card.get_atr()
 
-    def transmit(self, apdu: bytes) -> bytes:
-        """One command out, one response back, through every transform."""
+    def transmit(self, apdu: bytes, *, wait: Optional[float] = None) -> bytes:
+        """
+        One command out, one response back, through every transform.
+
+        `wait` bounds how long this sits waiting its turn — for a pause to be
+        lifted, or for the exchange already in flight to finish. The driver
+        passes nothing, because a pause is meant to hold it indefinitely; the
+        console passes a few seconds, because a console thread parked forever
+        cannot even be told to stop. A breakpoint holding the chain used to
+        park it exactly that way.
+        """
         # Waited on outside the lock, or a pause would hold the lock and a
         # console `resume` could never get in.
-        self._resumed.wait()
-        with self._lock:
+        if not self._resumed.wait(timeout=wait):
+            raise ChainError("The chain is paused. Resume it, or stop.")
+        if not self._lock.acquire(timeout=-1 if wait is None else wait):
+            raise ChainError(
+                "The chain has been busy for more than %.0f seconds — a "
+                "breakpoint is holding it, or the card has not answered."
+                % wait
+            )
+        try:
             return self._transmit(apdu)
+        finally:
+            self._lock.release()
 
     def _transmit(self, apdu: bytes) -> bytes:
         started = time.perf_counter()
@@ -155,6 +193,22 @@ class Chain:
         if self._observer is not None:
             self._observer.answered(from_card, elapsed_ms)
 
+        # A transform that wants to know how long the card took is told here,
+        # which is the only place that knows. The timing node's whole purpose is
+        # to react to a slow card, and until this call existed it was inert: it
+        # bound, passed traffic through and counted nothing, while its own
+        # docstring said the engine called it.
+        for node_id, transform in zip(self._transform_ids, self._transforms):
+            noticed = getattr(transform, "note_elapsed", None)
+            if noticed is None:
+                continue
+            try:
+                if noticed(elapsed_ms) and self._observer is not None:
+                    self._observer.slow(node_id, elapsed_ms)
+            except Exception as exc:  # noqa: BLE001 - never fail an exchange for this
+                if self._observer is not None:
+                    self._observer.failed(node_id, exc)
+
         # Outward-in on the way down, inward-out on the way back, so a
         # transform's two hooks bracket the same exchange.
         for node_id, transform in zip(
@@ -183,6 +237,8 @@ class ExchangeObserver(Protocol):
     def started(self, asked: bytes) -> None: ...
 
     def answered(self, from_card: bytes, elapsed_ms: float) -> None: ...
+
+    def slow(self, node_id: str, elapsed_ms: float) -> None: ...
 
     def exchanged(
         self, asked: bytes, sent: bytes, response: bytes, elapsed_ms: float

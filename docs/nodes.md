@@ -124,8 +124,21 @@ block, so this one decides *when* one is warranted and records it.
 Holds each matching command until you release it from the console.
 
 Stops the clock dead — any real terminal will time out while you think, which
-is why it is a node you add deliberately rather than a mode. Stopping the
-runtime always releases a held breakpoint; you cannot wedge a run with one.
+is why it is a node you add deliberately rather than a mode.
+
+When it catches something it says so in the console, naming the node and the
+bytes it is holding. Let it go with:
+
+```
+release                   the held command, unchanged
+release 80A8000002831234  the same exchange with different bytes
+release breakpoint-1      when more than one is holding
+```
+
+Releasing does not disarm it, so the next matching command is caught too —
+which is how you step through a transaction. `tx` refuses while anything is
+held, and stopping the runtime always disarms rather than merely releasing, so
+you cannot wedge a run with one.
 
 ---
 
@@ -206,7 +219,7 @@ is no per-node React component.
 
 ```bash
 cd ui
-npm run export:catalogue     # regenerates schema/catalogue.json for Python
+npm run export:catalogue     # regenerates plexus/schema/catalogue.json
 ```
 
 Both sides read that JSON, so the description exists once. Then write the

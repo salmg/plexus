@@ -108,7 +108,8 @@ def _show(graph: Graph) -> int:
         spec = CATALOGUE.get(node.type)
         cost = f"{spec.latency_ms} ms" if spec else "?"
         host = f"  @{node.host}" if node.host else ""
-        print(f"  {'└─' if i == len(steps) - 1 else '├─'} {node.name}  ({node.type}, {cost}){host}")
+        branch = "└─" if i == len(steps) - 1 else "├─"
+        print(f"  {branch} {node.name}  ({node.type}, {cost}){host}")
 
     one_way = chain_latency(graph, steps[0].id)
     print(f"\n  {one_way} ms each way, {one_way * 2} ms out and back.")
@@ -129,7 +130,10 @@ def _serve(host: str, port: int, reload: bool) -> int:
         return 2
 
     print("Plexus runtime on ws://%s:%d/ws" % (host, port))
-    print("Point the editor at it:  http://localhost:5173/?runtime=ws://%s:%d/ws\n" % (host, port))
+    print(
+        "Point the editor at it:  http://localhost:5173/?runtime=ws://%s:%d/ws\n"
+        % (host, port)
+    )
     serve(host=host, port=port, reload=reload)
     return 0
 
@@ -201,7 +205,10 @@ def _nodes() -> int:
             f"{mark} {node_type.key:<18} {node_type.node_class:<10} "
             f"{ports:<34} {node_type.title}"
         )
-    print("\n· needs hardware or a daemon this build cannot start; the rest run anywhere.")
+    print(
+        "\n· needs hardware or a daemon this build cannot start; "
+        "the rest run anywhere."
+    )
     return 0
 
 

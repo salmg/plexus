@@ -30,7 +30,7 @@ from typing import Any, Iterable, Iterator, Literal
 
 import yaml
 
-from plexus.catalogue import CATALOGUE, NodeType
+from plexus.catalogue import CATALOGUE, NodeType, Port
 
 Channel = Literal["apdu", "iso8583"]
 PortRole = Literal["requester", "responder"]
@@ -228,6 +228,7 @@ def validate(graph: Graph, devices: Iterable[Device] = ()) -> list[Problem]:
             Problem("empty", "warning", "The graph is empty."),
         ]
 
+    problems += _edge_problems(graph)
     problems += _port_problems(graph)
     problems += _device_problems(graph, by_id)
     problems += _host_problems(graph)
@@ -235,6 +236,168 @@ def validate(graph: Graph, devices: Iterable[Device] = ()) -> list[Problem]:
 
     problems.sort(key=lambda p: 0 if p.level == "error" else 1)
     return problems
+
+
+def _edge_problems(graph: Graph) -> list[Problem]:
+    """
+    Is every edge one the editor would have let you draw?
+
+    The editor refuses these while the wire is still being dragged, in
+    ``canConnect``. Nothing here re-derived them, so a graph that never went
+    through the editor — hand-written, generated, or sent by someone else —
+    could name a cycle, a self-edge, two requesters wired together or one port
+    carrying two conversations, pass ``plexus check`` clean, and reach ``arm``.
+    What happened then depended on which rule was broken: a doubly-wired port
+    quietly lost an edge, because ``chain`` follows the first one it finds.
+
+    Kept deliberately parallel to ``canConnect`` in
+    ``ui/src/graph/validate.ts``: same conditions, same wording, so the two
+    sides of the project agree about what a legal graph is.
+    """
+    out: list[Problem] = []
+    active = {n.id for n in graph.active}
+    claimed: dict[PortRef, str] = {}
+
+    for edge in graph.edges:
+        if edge.source.node not in active or edge.target.node not in active:
+            # An edge onto a disabled node is not an error — disabling is how you
+            # park part of a rig — and a missing node is refused at parse time.
+            continue
+
+        if edge.source.node == edge.target.node:
+            out.append(
+                Problem(
+                    "self-edge",
+                    "error",
+                    "%s is wired to itself. A node cannot talk to itself."
+                    % (graph.node(edge.source.node).name),
+                    node_id=edge.source.node,
+                    edge_id=edge.id,
+                )
+            )
+            continue
+
+        source = _port_of(graph, edge.source)
+        target = _port_of(graph, edge.target)
+
+        if source is None or target is None:
+            missing = edge.source if source is None else edge.target
+            out.append(
+                Problem(
+                    "unknown-port",
+                    "error",
+                    'No port "%s" on %s.'
+                    % (missing.port, graph.node(missing.node).name),
+                    node_id=missing.node,
+                    edge_id=edge.id,
+                )
+            )
+            continue
+
+        if source.channel != target.channel:
+            out.append(
+                Problem(
+                    "wrong-channel",
+                    "error",
+                    "A %s port does not carry %s." % (source.channel, target.channel),
+                    node_id=edge.source.node,
+                    edge_id=edge.id,
+                )
+            )
+            continue
+
+        if source.role == target.role:
+            both = "ask" if source.role == "requester" else "answer"
+            out.append(
+                Problem(
+                    "same-role",
+                    "error",
+                    "Both ports %s. An edge joins one that asks to one that answers."
+                    % both,
+                    node_id=edge.source.node,
+                    edge_id=edge.id,
+                )
+            )
+            continue
+
+        # One conversation per port. Fanning a card out to two terminals is not a
+        # graph this can run — it is two graphs.
+        for ref, port in ((edge.source, source), (edge.target, target)):
+            held = claimed.get(ref)
+            if held is not None and held != edge.id:
+                out.append(
+                    Problem(
+                        "port-contended",
+                        "error",
+                        "The %s port on %s is wired twice."
+                        % (port.label, graph.node(ref.node).name),
+                        node_id=ref.node,
+                        edge_id=edge.id,
+                    )
+                )
+            else:
+                claimed[ref] = edge.id
+
+    cycle = _find_cycle(graph)
+    if cycle:
+        out.append(
+            Problem(
+                "cycle",
+                "error",
+                "These nodes form a loop: %s. A conversation has to end somewhere."
+                % " -> ".join(cycle),
+                node_id=cycle[0],
+            )
+        )
+
+    return out
+
+
+def _port_of(graph: Graph, ref: PortRef) -> Port | None:
+    node = graph.node(ref.node)
+    if node is None:
+        return None
+    spec = CATALOGUE.get(node.type)
+    if spec is None:
+        return None
+    return next((p for p in spec.ports if p.id == ref.port), None)
+
+
+def _find_cycle(graph: Graph) -> list[str]:
+    """
+    The first cycle reachable by following edges, as a node-id path.
+
+    Out-of-band edges are followed too: an injection wired back into its own
+    upstream is still a loop, and it would still hang.
+    """
+    following: dict[str, list[str]] = {}
+    for edge in graph.edges:
+        following.setdefault(edge.source.node, []).append(edge.target.node)
+
+    WHITE, GREY, BLACK = 0, 1, 2
+    colour: dict[str, int] = {}
+
+    def walk(node_id: str, path: list[str]) -> list[str]:
+        colour[node_id] = GREY
+        path.append(node_id)
+        for nxt in following.get(node_id, ()):
+            shade = colour.get(nxt, WHITE)
+            if shade == GREY:
+                return path[path.index(nxt) :] + [nxt]
+            if shade == WHITE:
+                found = walk(nxt, path)
+                if found:
+                    return found
+        path.pop()
+        colour[node_id] = BLACK
+        return []
+
+    for node in graph.active:
+        if colour.get(node.id, WHITE) == WHITE:
+            found = walk(node.id, [])
+            if found:
+                return found
+    return []
 
 
 def _port_problems(graph: Graph) -> list[Problem]:
@@ -367,14 +530,21 @@ def _host_problems(graph: Graph) -> list[Problem]:
 
 
 def chain_latency(graph: Graph, start_id: str) -> int:
-    """Expected milliseconds per exchange along the chain starting at a node."""
+    """
+    Expected milliseconds per exchange along the chain starting at a node.
+
+    Active nodes only, for the same reason `chain` walks active nodes only: a
+    disabled node is not in the conversation, and counting its latency made the
+    tap-budget check answer about a rig that is not the one being run.
+    """
     total = 0
     seen: set[str] = set()
+    alive = {n.id: n for n in graph.active}
     current: str | None = start_id
 
     while current and current not in seen:
         seen.add(current)
-        node = graph.node(current)
+        node = alive.get(current)
         if node is None:
             break
         spec = CATALOGUE.get(node.type)
@@ -430,6 +600,13 @@ def chain(graph: Graph) -> list[Node]:
     stops when nothing asks further.  Out-of-band edges are skipped: they are a
     side channel to the card rather than a step in the conversation, and
     counting them would double the latency of any graph with an injection node.
+
+    Disabled nodes end the walk.  Disabling is how you park part of a rig, so
+    the conversation stops where the parked node is, and `arm` then refuses a
+    chain with nothing answering at the end of it.  This used to advance with
+    `graph.node()`, which searches every node — so the engine bound and drove a
+    node the editor greys out and skips, and the two halves disagreed about what
+    was running.  `ui/src/runtime/mock.ts` truncates here too.
     """
     roots = [
         n
@@ -443,6 +620,7 @@ def chain(graph: Graph) -> list[Node]:
 
     out: list[Node] = []
     seen: set[str] = set()
+    alive = {n.id: n for n in graph.active}
     current: Node | None = roots[0]
 
     while current is not None and current.id not in seen:
@@ -456,7 +634,7 @@ def chain(graph: Graph) -> list[Node]:
             ),
             None,
         )
-        current = graph.node(step.target.node) if step else None
+        current = alive.get(step.target.node) if step else None
 
     return out
 

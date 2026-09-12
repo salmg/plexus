@@ -28,7 +28,12 @@ from plexus.graph import (
     validate,
 )
 
-EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "contactless-relay.plexus.yaml"
+REPO = Path(__file__).resolve().parent.parent
+EXAMPLE = (
+    Path(__file__).resolve().parent.parent
+    / "examples"
+    / "contactless-relay.plexus.yaml"
+)
 
 
 def build(body: str) -> Graph:
@@ -351,7 +356,229 @@ def test_a_disabled_node_is_not_in_the_chain():
     assert "acr122u-target-1" not in [n.id for n in chain(graph)]
 
 
+def test_disabling_a_middle_node_ends_the_chain_there():
+    """
+    The walk used to advance with `graph.node()`, which searches every node,
+    disabled included. So disabling `trace-1` — which the editor greys out and
+    steps over — left this side returning all four nodes, and the engine bound
+    and drove the node the editor says is skipped.
+
+    `ui/src/runtime/mock.ts` truncates at the parked node, so this truncates.
+    """
+    graph = Graph.load(EXAMPLE)
+    graph.node("trace-1").disabled = True
+    assert [n.id for n in chain(graph)] == ["acr122u-target-1"]
+
+
+def test_a_disabled_node_does_not_count_towards_the_tap_budget():
+    """Latency walked into disabled nodes too, so the budget check answered
+    about a rig that was not the one being run."""
+    graph = Graph.load(EXAMPLE)
+    whole = chain_latency(graph, "acr122u-target-1")
+    graph.node("trace-1").disabled = True
+    parked = chain_latency(graph, "acr122u-target-1")
+    assert parked < whole
+    assert parked == CATALOGUE.get("acr122u.target").latency_ms
+
+
 def test_no_terminal_means_no_chain():
     graph = build(MINIMAL)
     graph.nodes = [n for n in graph.nodes if n.id != "t"]
     assert chain(graph) == []
+
+
+# ── Edge legality: the rules the editor enforces while you drag a wire ──────
+#
+# `canConnect` in ui/src/graph/validate.ts refuses these before the wire lands.
+# Nothing on this side re-derived them, so a graph that never went through the
+# editor could carry any of them, pass `plexus check` clean and reach `arm`.
+
+
+def test_a_self_edge_is_refused():
+    graph = build(
+        """
+        version: 1
+        name: talks to itself
+        nodes:
+          - id: m
+            type: mutation
+            at: [0, 0]
+            config: {playbook: "enabled: true"}
+        edges:
+          - from: m:card
+            to: m:terminal
+        """
+    )
+    problem = next(p for p in validate(graph) if p.code == "self-edge")
+    assert problem.blocking
+    assert "cannot talk to itself" in problem.message
+
+
+def test_two_ports_that_both_ask_are_refused():
+    graph = build(
+        """
+        version: 1
+        name: both ask
+        nodes:
+          - id: p
+            type: probe
+            at: [0, 0]
+            config: {depth: quick}
+          - id: q
+            type: agent
+            at: [200, 0]
+            config: {}
+        edges:
+          - from: p:card
+            to: q:card
+        """
+    )
+    problem = next(p for p in validate(graph) if p.code == "same-role")
+    assert problem.blocking
+    assert "Both ports ask" in problem.message
+
+
+def test_two_ports_that_both_answer_are_refused():
+    graph = build(
+        """
+        version: 1
+        name: both answer
+        nodes:
+          - id: a
+            type: capture
+            at: [0, 0]
+            config: {path: tests/captures/mastercard-probe.jsonl}
+          - id: b
+            type: capture
+            at: [200, 0]
+            config: {path: tests/captures/mastercard-probe.jsonl}
+        edges:
+          - from: a:terminal
+            to: b:terminal
+        """
+    )
+    problem = next(p for p in validate(graph) if p.code == "same-role")
+    assert "Both ports answer" in problem.message
+
+
+def test_an_unknown_port_is_refused():
+    graph = build(
+        """
+        version: 1
+        name: no such port
+        nodes:
+          - id: p
+            type: probe
+            at: [0, 0]
+            config: {depth: quick}
+          - id: c
+            type: capture
+            at: [200, 0]
+            config: {path: tests/captures/mastercard-probe.jsonl}
+        edges:
+          - from: p:nonsense
+            to: c:terminal
+        """
+    )
+    problem = next(p for p in validate(graph) if p.code == "unknown-port")
+    assert problem.blocking
+    assert "nonsense" in problem.message
+
+
+def test_one_port_cannot_carry_two_conversations():
+    """
+    The quiet one: `chain` follows the first edge it finds, so a doubly-wired
+    card port silently dropped the other branch rather than failing.
+    """
+    graph = build(
+        """
+        version: 1
+        name: fanned out
+        nodes:
+          - id: p
+            type: probe
+            at: [0, 0]
+            config: {depth: quick}
+          - id: a
+            type: capture
+            at: [200, 0]
+            config: {path: tests/captures/mastercard-probe.jsonl}
+          - id: b
+            type: capture
+            at: [200, 200]
+            config: {path: tests/captures/mastercard-probe.jsonl}
+        edges:
+          - id: e1
+            from: p:card
+            to: a:terminal
+          - id: e2
+            from: p:card
+            to: b:terminal
+        """
+    )
+    problem = next(p for p in validate(graph) if p.code == "port-contended")
+    assert problem.blocking
+    assert "wired twice" in problem.message
+
+
+def test_a_loop_is_refused():
+    graph = build(
+        """
+        version: 1
+        name: round and round
+        nodes:
+          - id: x
+            type: trace
+            at: [0, 0]
+            config: {}
+          - id: y
+            type: mutation
+            at: [200, 0]
+            config: {playbook: "enabled: true"}
+        edges:
+          - from: x:card
+            to: y:terminal
+          - from: y:card
+            to: x:terminal
+        """
+    )
+    problem = next(p for p in validate(graph) if p.code == "cycle")
+    assert problem.blocking
+    assert "loop" in problem.message
+
+
+def test_the_example_rigs_still_pass_the_new_edge_checks():
+    """Whatever the new rules refuse, they must not refuse what already worked."""
+    for rig in sorted((REPO / "examples").glob("*.yaml")):
+        problems = validate(Graph.load(rig))
+        assert not [p for p in problems if p.blocking], f"{rig.name}: {problems}"
+
+
+def test_a_disabled_node_does_not_trip_the_edge_checks():
+    """Disabling half a rig is how you park it; its wires are not errors."""
+    graph = build(
+        """
+        version: 1
+        name: parked
+        nodes:
+          - id: p
+            type: probe
+            at: [0, 0]
+            config: {depth: quick}
+          - id: c
+            type: capture
+            at: [200, 0]
+            config: {path: tests/captures/mastercard-probe.jsonl}
+          - id: spare
+            type: capture
+            disabled: true
+            at: [200, 200]
+            config: {path: tests/captures/mastercard-probe.jsonl}
+        edges:
+          - from: p:card
+            to: c:terminal
+          - from: p:card
+            to: spare:terminal
+        """
+    )
+    assert not [p for p in validate(graph) if p.blocking]

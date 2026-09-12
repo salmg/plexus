@@ -1,7 +1,7 @@
 """
 The node catalogue, loaded rather than written.
 
-``schema/catalogue.json`` is generated from ``ui/src/catalogue/index.ts`` by
+``plexus/schema/catalogue.json`` is generated from ``ui/src/catalogue/index.ts`` by
 ``npm run export:catalogue``.  There is exactly one place a node type is
 described, and both the editor and the runtime read it — a Python copy of the
 same table would drift within a week, and the first symptom would be a graph
@@ -16,9 +16,18 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any
 
-#: Repository root, three levels up from this file.
-ROOT = Path(__file__).resolve().parent.parent
-CATALOGUE_PATH = ROOT / "schema" / "catalogue.json"
+#: The catalogue ships *inside* the package, not beside it.
+#
+# It used to sit at the repository root, which works for every way this project
+# is actually developed — an editable install, or a plain clone — and fails for
+# the one way it reaches someone else. `pip install .` collects `plexus*` and
+# nothing above it, so the installed tree had no `schema/` beside the package
+# at all: a non-editable install produced a `plexus` command that could not
+# answer a single subcommand. Measured, not assumed.
+#
+# The file's only reader is Python — the editor authors the TypeScript the
+# generator reads — so the package is where it belongs.
+CATALOGUE_PATH = Path(__file__).resolve().parent / "schema" / "catalogue.json"
 
 
 class CatalogueError(RuntimeError):
@@ -77,7 +86,9 @@ class Catalogue:
                 "Run `npm run export:catalogue` in ui/ to generate it."
             ) from exc
         except json.JSONDecodeError as exc:
-            raise CatalogueError(f"Catalogue at {self._path} is not valid JSON: {exc}") from exc
+            raise CatalogueError(
+                f"Catalogue at {self._path} is not valid JSON: {exc}"
+            ) from exc
 
         return {entry["key"]: _node_type(entry) for entry in raw.get("nodeTypes", [])}
 

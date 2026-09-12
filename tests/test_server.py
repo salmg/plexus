@@ -14,19 +14,28 @@ from __future__ import annotations
 
 import json
 import os
+import queue
+import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
+from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 
 from plexus.api import server as server_module
+from plexus.api import session as session_module
 from plexus.api.server import create_app, host_ok, is_loopback, token_ok
 from plexus.api.session import _normalise
 from plexus.graph import Graph, GraphError
 
 CAPTURE = Path(__file__).resolve().parent / "captures" / "mastercard-probe.jsonl"
-EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "probe-a-capture.plexus.yaml"
+EXAMPLE = (
+    Path(__file__).resolve().parent.parent
+    / "examples"
+    / "probe-a-capture.plexus.yaml"
+)
 
 
 def graph_frame() -> Dict[str, Any]:
@@ -69,18 +78,73 @@ def unwrap(frame: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [frame]
 
 
-def collect(socket, *, until: str, limit: int = 400) -> List[Dict[str, Any]]:
+# How long any wait in this file may take before it is a failure rather than a
+# wait. Deliberately generous: the point is not to be tight, it is to be finite.
+FRAME_BUDGET_S = float(os.environ.get("PLEXUS_TEST_FRAME_BUDGET", "20"))
+
+
+class Timeout(Exception):
+    """The server sent nothing before the deadline."""
+
+
+def pull(socket, deadline: float) -> Dict[str, Any]:
+    """
+    One frame, or `Timeout` once the deadline has passed.
+
+    `socket.receive_json()` is a `queue.get()` with no timeout, so every wait
+    in this file used to be unbounded. `limit` counts reads, and a read that
+    never returns never reaches the next count — so a test waiting for a frame
+    the runtime will not send hung the suite instead of failing it. That is the
+    worst failure mode available: it reads as a broken machine, and on the
+    machine that wrote the capture it never happened at all.
+
+    Reaching into `_send_queue` is deliberate. It is where the app's outbound
+    frames land, and it is the only place a deadline can be applied.
+    """
+    outbound = getattr(socket, "_send_queue", None)
+    if outbound is None:  # pragma: no cover - a starlette that moved the queue
+        return socket.receive_json()
+    try:
+        message = outbound.get(timeout=max(deadline - time.monotonic(), 0.0))
+    except queue.Empty:
+        raise Timeout() from None
+    if isinstance(message, BaseException):
+        raise message
+    if message.get("type") == "websocket.close":
+        raise AssertionError(
+            "the server closed the socket (code %s) instead of answering."
+            % message.get("code")
+        )
+    text = message.get("text")
+    if text is None:
+        text = message["bytes"].decode("utf-8")
+    return json.loads(text)
+
+
+def collect(
+    socket, *, until: str, limit: int = 400, budget: float = FRAME_BUDGET_S
+) -> List[Dict[str, Any]]:
     """Read until a frame of `until` type arrives, flattening batches."""
     seen: List[Dict[str, Any]] = []
+    deadline = time.monotonic() + budget
     for _ in range(limit):
-        for frame in unwrap(socket.receive_json()):
+        try:
+            arrived = unwrap(pull(socket, deadline))
+        except Timeout:
+            raise AssertionError(
+                "no %r frame within %.1fs; last frames: %r"
+                % (until, budget, seen[-5:])
+            ) from None
+        for frame in arrived:
             seen.append(frame)
             if frame.get("type") == until:
                 return seen
     raise AssertionError("no %r frame in %d reads: %r" % (until, limit, seen[-5:]))
 
 
-def collect_state(socket, want: str, limit: int = 400) -> List[Dict[str, Any]]:
+def collect_state(
+    socket, want: str, limit: int = 400, budget: float = FRAME_BUDGET_S
+) -> List[Dict[str, Any]]:
     """
     Read until a *particular* state arrives.
 
@@ -89,8 +153,13 @@ def collect_state(socket, want: str, limit: int = 400) -> List[Dict[str, Any]]:
     nothing.
     """
     seen: List[Dict[str, Any]] = []
+    deadline = time.monotonic() + budget
     for _ in range(limit):
-        for frame in unwrap(socket.receive_json()):
+        try:
+            arrived = unwrap(pull(socket, deadline))
+        except Timeout:
+            break
+        for frame in arrived:
             seen.append(frame)
             if frame.get("type") == "state" and frame.get("state") == want:
                 return seen
@@ -133,20 +202,56 @@ def test_an_unknown_frame_says_so_rather_than_dying(client):
         )
 
 
+def test_waiting_for_a_frame_that_never_comes_fails_rather_than_hanging(client):
+    """
+    The bound on the collectors, checked.
+
+    Before `pull` had a deadline this test could not have failed — it would
+    have hung, taking the suite with it. That is how a missing capture
+    presented itself on every machine but the one that wrote the capture.
+    """
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        collect(socket, until="state")
+
+        started = time.monotonic()
+        with pytest.raises(AssertionError) as absent:
+            collect(socket, until="no-such-frame-type", budget=0.5)
+        assert time.monotonic() - started < 10.0
+        assert "within 0.5s" in str(absent.value)
+
+        started = time.monotonic()
+        with pytest.raises(AssertionError) as never:
+            collect_until(socket, lambda seen: False, budget=0.5)
+        assert time.monotonic() - started < 10.0
+        assert "condition never met within 0.5s" in str(never.value)
+
+
 # ── Arming and running ──────────────────────────────────────────────────────
 
 
-def collect_until(socket, done, limit: int = 400) -> List[Dict[str, Any]]:
+def collect_until(
+    socket, done, limit: int = 400, budget: float = FRAME_BUDGET_S
+) -> List[Dict[str, Any]]:
     """
     Read until `done(seen)` is true.
 
-    Never wait for something the runtime does not promise: `receive_json`
-    blocks forever with nothing to read, so a test that waits for a state the
-    runtime will not reach hangs the whole suite rather than failing. It did.
+    Never wait for something the runtime does not promise. This docstring said
+    exactly that while the code did the opposite: `limit` bounded the number of
+    reads, not the wait, and the wait was the unbounded half. `pull` puts a
+    deadline on it, so a condition the runtime will never meet now fails with
+    the frames it did send.
     """
     seen: List[Dict[str, Any]] = []
+    deadline = time.monotonic() + budget
     for _ in range(limit):
-        seen.extend(unwrap(socket.receive_json()))
+        try:
+            seen.extend(unwrap(pull(socket, deadline)))
+        except Timeout:
+            raise AssertionError(
+                "condition never met within %.1fs; last frames: %r"
+                % (budget, seen[-5:])
+            ) from None
         if done(seen):
             return seen
     raise AssertionError("condition never met; last frames: %r" % seen[-5:])
@@ -275,7 +380,11 @@ def test_tx_pushes_an_apdu_by_hand_and_shows_both_halves(client):
         collect(socket, until="state")
 
         socket.send_json(
-            {"type": "command", "id": "t", "line": "tx 00A404000E325041592E5359532E444446303100"}
+            {
+                "type": "command",
+                "id": "t",
+                "line": "tx 00A404000E325041592E5359532E444446303100",
+            }
         )
         result = next(f for f in collect(socket, until="result") if f["type"] == "result")
         assert result["lines"][0].startswith("-> 00A404000E")
@@ -346,7 +455,9 @@ def test_the_editors_json_and_the_saved_yaml_describe_the_same_graph():
 
     rebuilt = Graph.from_yaml(yaml.safe_dump(posted, sort_keys=False))
     assert [n.id for n in rebuilt.nodes] == [n.id for n in from_file.nodes]
-    assert [str(e.source) for e in rebuilt.edges] == [str(e.source) for e in from_file.edges]
+    assert [str(e.source) for e in rebuilt.edges] == [
+        str(e.source) for e in from_file.edges
+    ]
     assert rebuilt.node("mutation-1").config == from_file.node("mutation-1").config
 
 
@@ -398,7 +509,7 @@ def test_binding_beyond_loopback_without_a_token_refuses_to_start(monkeypatch):
 def test_a_socket_without_the_token_is_closed(monkeypatch):
     monkeypatch.setenv(server_module.TOKEN_VARIABLE, "sekrit")
     with TestClient(create_app()) as client:
-        with pytest.raises(Exception):
+        with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws") as socket:
                 socket.receive_json()
 
@@ -410,4 +521,229 @@ def test_health_says_what_this_build_can_bind(client):
     assert body["nodes"]["pcsc"] == "pending"
 
 
-_ = (json, os)
+def test_stop_overtakes_a_console_command_that_is_still_running(client, monkeypatch):
+    """
+    The read loop used to await each frame's handler, and `command` can block
+    on a card. So `stop` sat unread behind it: measured at 4.01s for a
+    four-second command, with the editor's button stuck on Stop throughout.
+
+    A slow `console.run` stands in for a card that has not answered.
+    """
+    started = threading.Event()
+
+    def slow_run(engine, graph, line):
+        started.set()
+        time.sleep(2.0)
+        return (["-> slow", "<- slow"], None)
+
+    from plexus.api import console as console_module
+
+    monkeypatch.setattr(console_module, "run", slow_run)
+
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        collect(socket, until="state")
+
+        socket.send_json({"type": "command", "id": "slow", "line": "tx 00B2010C00"})
+        assert started.wait(2.0), "the command never started"
+
+        asked = time.monotonic()
+        socket.send_json({"type": "stop"})
+        collect_state(socket, "stopped")
+        answered = time.monotonic() - asked
+
+        assert answered < 1.5, (
+            "stop waited for the command to finish (%.2fs)" % answered
+        )
+        # Nothing was armed, so it goes straight to stopped — the point is
+        # that the frame was read at all while the command was still out.
+
+        # And the command still answers, on its own time, by its own id.
+        result = next(
+            f for f in collect(socket, until="result") if f["type"] == "result"
+        )
+        assert result["id"] == "slow"
+
+
+# ── Losing the socket ───────────────────────────────────────────────────────
+
+
+def test_the_run_survives_the_socket_and_a_reconnect_catches_up(client):
+    """
+    PROTOCOL.md's promise, which was false when it was written: every
+    connection built its own Engine and `Session.close` stopped it, so a
+    browser reload released the card mid-transaction and the reconnecting
+    editor was talking to a different engine that had never been armed. The
+    replay in `_hello` was written for this and had nothing to replay.
+    """
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        collect(socket, until="state")
+        socket.send_json({"type": "arm", "graph": graph_frame()})
+        first = collect_state(socket, "running")
+        assert [f["state"] for f in first if f["type"] == "state"][-1] == "running"
+
+    # Socket gone. The probe runs out of script and settles, which keeps the
+    # card bound on purpose — so there is genuinely something to come back to.
+    #
+    # Waited for rather than assumed: the server tears the connection down
+    # asynchronously, and reconnecting before it has finished would test the
+    # race rather than the reconnect.
+    runtime = client.app.state.runtime
+    deadline = time.monotonic() + 5.0
+    while runtime.listeners and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert runtime.listeners == 0, "the server never finished with the closed socket"
+
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        # `_hello` sends devices, then state, then one node frame per bound
+        # node — so waiting for "a state frame" stops before the replay.
+        seen = collect_until(
+            socket,
+            lambda s: {f["id"] for f in s if f["type"] == "node"} >= {"p", "c"},
+        )
+
+        state = next(f for f in seen if f["type"] == "state")["state"]
+        assert state == "running", "the run was dropped with the socket"
+
+        nodes = {f["id"] for f in seen if f["type"] == "node"}
+        assert nodes == {"p", "c"}, "the reconnecting editor was not told the nodes"
+
+        # And it is the same engine, not a fresh one: `tx` still reaches the
+        # card the first connection bound.
+        socket.send_json({"type": "command", "id": "t", "line": "tx 00B2010C00"})
+        result = next(
+            f for f in collect(socket, until="result") if f["type"] == "result"
+        )
+        assert result["lines"][1].startswith("<- 70145A08")
+
+        socket.send_json({"type": "stop"})
+        collect_state(socket, "stopped")
+
+
+def test_stop_still_ends_it(client):
+    """The run outlives a socket, not a `stop`."""
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        collect(socket, until="state")
+        socket.send_json({"type": "arm", "graph": graph_frame()})
+        collect_state(socket, "running")
+        socket.send_json({"type": "stop"})
+        collect_state(socket, "stopped")
+
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        seen = collect(socket, until="state")
+        assert next(f for f in seen if f["type"] == "state")["state"] == "stopped"
+        assert not [f for f in seen if f["type"] == "node"]
+
+
+# ── What the frame queue may cost the relay ─────────────────────────────────
+#
+# `_offer` runs on the thread driving the card. It may not block, may not
+# raise, and may not do work proportional to how far behind the listener is.
+# The version before this one broke the third: at the limit it drained and
+# refilled the whole queue for every non-apdu frame — 6.7 ms each, on the relay
+# thread — and grew without limit while doing it, because PROTOCOL.md says node
+# and edge frames must not be dropped and it had nothing else to drop.
+
+
+def a_session() -> "session_module.Session":
+    async def nowhere(frame):
+        return None
+
+    return session_module.Session(nowhere)
+
+
+def held(session) -> int:
+    return len(session._stream) + len(session._latest) + len(session._states)
+
+
+def test_a_flood_of_apdus_is_capped_and_counted():
+    session = a_session()
+    for i in range(session_module.STREAM_LIMIT + 500):
+        session._offer({"type": "apdu", "event": {"i": i}})
+
+    assert len(session._stream) == session_module.STREAM_LIMIT
+    assert session._dropped == 500
+    # The *oldest* went, so the newest trace is what survives.
+    assert session._stream[-1]["event"]["i"] == session_module.STREAM_LIMIT + 499
+
+
+def test_a_flood_of_node_frames_does_not_grow_the_queue():
+    """
+    The relay emits one node frame per node on every exchange, so this is the
+    real shape of the load. Only the newest value of each node means anything,
+    so they coalesce by id and the memory is bounded by the graph, not the run.
+    """
+    session = a_session()
+    for i in range(session_module.STREAM_LIMIT):
+        session._offer({"type": "apdu", "event": {"i": i}})
+    before = held(session)
+
+    for i in range(5000):
+        session._offer({"type": "node", "id": "n%d" % (i % 4), "telemetry": {"apdus": i}})
+
+    assert held(session) == before + 4, "one entry per node, however many arrive"
+    assert session._dropped == 0, "node frames must not be dropped"
+    # And it is the newest telemetry that survives, not the first.
+    assert session._latest[("node", "n3")]["telemetry"]["apdus"] == 4999
+
+
+def test_offering_at_the_limit_is_constant_time():
+    """
+    Measured, because this is the regression that mattered: 6.7 ms per frame
+    on the thread holding a card is a dropped tap.
+    """
+    session = a_session()
+    for i in range(session_module.STREAM_LIMIT):
+        session._offer({"type": "apdu", "event": {"i": i}})
+
+    started = time.perf_counter()
+    for i in range(2000):
+        session._offer({"type": "node", "id": "n%d" % (i % 4), "telemetry": {}})
+        session._offer({"type": "apdu", "event": {"i": i}})
+    each_ms = (time.perf_counter() - started) / 4000 * 1000
+
+    assert each_ms < 0.1, "%.3f ms per frame on the relay thread" % each_ms
+
+
+def test_a_state_frame_is_never_dropped():
+    session = a_session()
+    for i in range(session_module.STREAM_LIMIT * 2):
+        session._offer({"type": "apdu", "event": {"i": i}})
+    for state in ("arming", "running", "stopping", "stopped"):
+        session._offer({"type": "state", "state": state})
+
+    assert [f["state"] for f in session._states] == [
+        "arming",
+        "running",
+        "stopping",
+        "stopped",
+    ]
+
+
+def test_a_flush_sends_the_trace_then_the_telemetry_then_the_state():
+    """
+    A state change is the conclusion of the window it closes, so it reads last;
+    node telemetry reflects the end of that window, so it reads after the
+    exchanges that produced it.
+    """
+    import asyncio
+
+    sent = []
+
+    async def capture(frame):
+        sent.append(frame)
+
+    session = session_module.Session(capture)
+    session._offer({"type": "apdu", "event": {"i": 1}})
+    session._offer({"type": "node", "id": "n", "telemetry": {}})
+    session._offer({"type": "state", "state": "running"})
+
+    asyncio.get_event_loop().run_until_complete(session.flush())
+
+    assert len(sent) == 1 and sent[0]["type"] == "batch"
+    assert [f["type"] for f in sent[0]["frames"]] == ["apdu", "node", "state"]
+    assert held(session) == 0, "a flush empties everything it sent"

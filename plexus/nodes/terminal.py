@@ -247,7 +247,8 @@ class NotHereYet:
 
     def drive(self, channel, stop) -> None:
         raise TerminalUnavailable(
-            f"The {self.node_type} node is not implemented in this build. It needs {self.needs}."
+            f"The {self.node_type} node is not implemented in this build. "
+            f"It needs {self.needs}."
         )
 
 

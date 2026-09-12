@@ -26,6 +26,11 @@ log = logging.getLogger(__name__)
 #: a card will read, so it is refused before it reaches one.
 MAX_APDU_BYTES = 65544
 
+#: Where a mutation log goes when the playbook does not say. Atrium's own
+#: default, stated here so the file lands somewhere known inside the workspace
+#: rather than wherever the process happens to be standing.
+DEFAULT_MUTATION_LOG = "logs/mutations.jsonl"
+
 
 class TransformError(RuntimeError):
     """A transform could not be built or could not run. User-facing."""
@@ -121,11 +126,37 @@ class Mutation:
                 % type(parsed).__name__
             )
 
+        # The node's own "Log every rewrite" switch, written into the document
+        # rather than stored and forgotten. It was the latter: atrium reads
+        # `log_mutations` out of the playbook, so the checkbox in the inspector
+        # did nothing at all, and disagreed with the `log_mutations: true` in
+        # the default playbook text sitting beside it.
+        parsed["log_mutations"] = bool(log_mutations)
+
+        if log_mutations:
+            # `log_path` is a file write a graph asks for, so it goes through
+            # the same guard as a trace node's path. Atrium's `MutationLog`
+            # opens it at construction and creates its parent directories, so
+            # unchecked it was an arbitrary write anywhere the process could
+            # reach — outside the workspace included.
+            raw_log = parsed.get("log_path") or DEFAULT_MUTATION_LOG
+            if not isinstance(raw_log, str) or not raw_log.strip():
+                raise TransformError(
+                    "A playbook's log_path must be a path; this one is %s."
+                    % type(parsed.get("log_path")).__name__
+                )
+            parsed["log_path"] = str(resolve_write(raw_log, what="mutation log"))
+        else:
+            parsed.pop("log_path", None)
+
         self._temp = Path(
             tempfile.mkstemp(prefix="plexus-playbook-", suffix=".yaml")[1]
         )
-        self._temp.write_text(playbook, encoding="utf-8")
-        self.log_mutations = log_mutations
+        # The *sanitised* document, not the operator's text. Atrium's `reload()`
+        # re-reads this file at the start of every transaction and takes
+        # `log_path` from it again, so handing over the original would leave the
+        # reload path an escape even with the first load checked.
+        self._temp.write_text(yaml.safe_dump(parsed, sort_keys=False), encoding="utf-8")
 
         try:
             self._engine = load_mutation_engine(self._temp, card_execute=card_execute)
@@ -255,15 +286,27 @@ class Breakpoint:
         self._released = threading.Event()
         self._released.set()
         self.enabled = True
+        # Set by the engine at bind time. Without it a breakpoint was silent:
+        # it caught a command, blocked the chain, and told nobody — so the one
+        # thing you had to know in order to release it was the one thing you
+        # could not find out.
+        self.notify: Optional[Callable[[bytes], None]] = None
 
     def on_command(self, apdu: bytes) -> bytes:
-        if not self.enabled or (self.match is not None and (len(apdu) < 2 or apdu[1] != self.match)):
+        if not self.enabled or (
+            self.match is not None and (len(apdu) < 2 or apdu[1] != self.match)
+        ):
             return apdu
 
         self.hits += 1
         self.held = apdu
         self.replacement = None
         self._released.clear()
+        if self.notify is not None:
+            try:
+                self.notify(apdu)
+            except Exception:  # noqa: BLE001 - announcing must not hold the card
+                pass
         self._released.wait()
 
         held = self.replacement if (self.editable and self.replacement) else apdu

@@ -12,10 +12,18 @@ venv/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+build/
 
-# Runtime output — traces and captures are data, not source
+# Runtime output — ignored by *location*, not by extension.
+#
+# A bare `*.jsonl` here made tests/captures/mastercard-probe.jsonl untracked, so a
+# fresh clone had no capture: three test modules, examples/probe-a-capture.plexus.yaml,
+# both first-run guides and the screenshot script all referenced a file that was not in
+# the repository. Nothing caught it because the file exists on the machine that wrote it.
+#
+# A trace is output and belongs in logs/. A capture under tests/ is a fixture and is
+# source. Extension cannot tell those apart; the path can.
 logs/
-*.jsonl
 
 # Local runtime pointers and secrets
 .env

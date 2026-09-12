@@ -25,7 +25,8 @@ import threading
 from typing import Any, Callable, Dict, List, Optional
 
 from plexus.catalogue import CATALOGUE
-from plexus.graph import Graph, Problem, chain as chain_of, validate
+from plexus.graph import Graph, Problem, validate
+from plexus.graph import chain as chain_of
 from plexus.nodes import card as card_nodes
 from plexus.nodes import terminal as terminal_nodes
 from plexus.nodes import transform as transform_nodes
@@ -61,6 +62,7 @@ class Engine:
         self._card = None
         self._transforms: List[Any] = []
         self._transform_ids: List[str] = []
+        self._transform_by_id: Dict[str, Any] = {}
         self._node_ids: List[str] = []
         self._edge_ids: List[str] = []
 
@@ -69,6 +71,11 @@ class Engine:
         self._edges: Dict[str, EdgeTelemetry] = {}
 
         self._thread: Optional[threading.Thread] = None
+        # Arm and stop both bind or unbind hardware, and the server can now
+        # start a stop while an arm is still in an executor thread. Without
+        # this, `_bind` could set `_card` after `_release` had cleared it:
+        # a card left open with the runtime reporting "stopped".
+        self._gate = threading.RLock()
         self._stop = threading.Event()
         self._seq = 0
         self._state = "stopped"
@@ -94,12 +101,41 @@ class Engine:
 
     def arm(self, graph: Graph, devices=()) -> None:
         """Check the graph, bind every node, and start driving."""
+        with self._gate:
+            self._arm(graph, devices)
+
+    def _arm(self, graph: Graph, devices=()) -> None:
         if self.running:
             raise EngineError("Already running. Stop first.")
+
+        # `running` only asks whether the relay thread is alive, and two paths
+        # deliberately leave everything bound with a dead thread: a fault
+        # (`_release_if_idle`) so the rig can be inspected, and a script that
+        # ran out (`_settle`) so `tx` still reaches the card. In both the editor
+        # shows Run again — `isRunning` is false for `faulted`, and `running` is
+        # the state a finished probe leaves — so the next press came in here
+        # with a card open, and `_bind` overwrote `self._card` and
+        # `self._transforms` without closing either. One reader claimed twice,
+        # and nothing left holding the first claim.
+        if self._card is not None or self._transforms or self._chain is not None:
+            self._log("info", "Releasing what the last run left bound.", "runtime")
+            self._release()
 
         self.graph = graph
         self.clock.reset()
         self._seq = 0
+
+        # Cleared here, not in _bind, which only ever writes the nodes of the graph it
+        # is binding. Arming a *different* graph in the same session otherwise left the
+        # previous one's counters in place, and `Session._hello` replays all of
+        # `_telemetry` to a reconnecting editor — so it would be told about nodes that
+        # are not in the graph it is looking at.
+        self._telemetry.clear()
+        self._means.clear()
+        self._edges.clear()
+        self._node_ids = []
+        self._edge_ids = []
+
         self._set_state("arming")
 
         self.problems = validate(graph, devices)
@@ -112,7 +148,10 @@ class Engine:
 
         steps = chain_of(graph)
         if len(steps) < 2:
-            message = "No complete chain: a graph needs something that asks and something that answers."
+            message = (
+                "No complete chain: a graph needs something that asks and "
+                "something that answers."
+            )
             self._set_state("faulted", message)
             raise EngineError(message)
 
@@ -130,7 +169,9 @@ class Engine:
         self._set_state("running")
 
         self._stop.clear()
-        self._thread = threading.Thread(target=self._drive, name="plexus-relay", daemon=True)
+        self._thread = threading.Thread(
+            target=self._drive, name="plexus-relay", daemon=True
+        )
         self._thread.start()
 
     def _bind(self, steps) -> None:
@@ -171,10 +212,20 @@ class Engine:
 
         self._transforms = []
         self._transform_ids = []
+        self._transform_by_id = {}
         for node in middle:
-            built = transform_nodes.build(node.type, node.config, card_execute=card_execute)
+            built = transform_nodes.build(
+                node.type, node.config, card_execute=card_execute
+            )
+            # A breakpoint that catches a command blocks the chain, so it has to
+            # be able to say so. Set by attribute rather than by constructor
+            # argument: only one transform has anything to announce, and
+            # `build` should not grow a parameter for it.
+            if getattr(built, "notify", "missing") is None:
+                built.notify = self._holding(node.id)
             self._transforms.append(built)
             self._transform_ids.append(node.id)
+            self._transform_by_id[node.id] = built
             self._mark(node.id, status="ready")
 
         self._terminal = terminal_nodes.build(head.type, head.config)
@@ -218,6 +269,15 @@ class Engine:
 
     def stop(self, timeout: float = 5.0) -> None:
         """Ask the driver to stop between exchanges, then release everything."""
+        # The flag is set before the gate is taken: an arm may still be binding
+        # on another thread, and a driver that starts in the meantime should
+        # already know it is not wanted. `_arm` clears it just before starting,
+        # and `_stop_locked` sets it again once it has the gate.
+        self._stop.set()
+        with self._gate:
+            self._stop_locked(timeout)
+
+    def _stop_locked(self, timeout: float) -> None:
         if self._thread is None:
             self._release()
             self._set_state("stopped")
@@ -229,17 +289,46 @@ class Engine:
         # the thread can reach its next stop check instead of hanging on join.
         if self._chain is not None:
             self._chain.resume()
+        # `close`, not `release`. Releasing lets the held command through and
+        # leaves the breakpoint armed. Usually that is harmless — the stop flag
+        # is already set, so the driver checks it and leaves before sending
+        # anything else. But if stop lands just *after* that check, the driver's
+        # next command is caught by a breakpoint nobody is going to release: the
+        # join then times out and the card is disconnected under a live
+        # exchange. `close` sets the event and disarms, so there is no next
+        # catch to lose the race to.
         for transform in self._transforms:
-            release = getattr(transform, "release", None)
-            if release is not None:
-                release()
+            closer = getattr(transform, "close", None)
+            if closer is not None:
+                try:
+                    closer()
+                except Exception:  # pragma: no cover - shutdown is best effort
+                    log.debug("transform close failed", exc_info=True)
 
         self._thread.join(timeout=timeout)
         if self._thread.is_alive():
             self._log("warn", "The driver did not stop in time; releasing anyway.")
         self._thread = None
 
-        self._release()
+        # Released while nothing is in flight, where that is possible. If the
+        # join succeeded the chain is already quiet and this costs nothing; if
+        # it did not, one more second is worth spending before disconnecting a
+        # card mid-command. Not the full `timeout` again: a driver that ignored
+        # the stop flag for five seconds will not free the chain in the next
+        # five, and stop has to return.
+        chain = self._chain
+        if chain is None:
+            self._release()
+        else:
+            with chain.exclusive(timeout=min(timeout, 1.0)) as quiet:
+                if not quiet:
+                    self._log(
+                        "warn",
+                        "An exchange was still in flight. Releasing anyway — "
+                        "the card may be left mid-command.",
+                    )
+                self._release()
+
         self._log("info", "Stopped. Devices released.")
         self._set_state("stopped")
 
@@ -256,17 +345,84 @@ class Engine:
     def paused(self) -> bool:
         return self._chain is not None and self._chain.paused
 
+    # ── Breakpoints ─────────────────────────────────────────────────────
+    #
+    # A breakpoint is the one transform that stops rather than rewrites, so it
+    # is the one that needs a way out. The catalogue has always said "until you
+    # release it from the console"; for a while there was no verb that could,
+    # and the only way out of a hit was `stop`.
+
+    #: How long a console `tx` waits for its turn before saying why it cannot
+    #: have it. The driver holds the chain for one exchange; longer than this
+    #: and something is stuck.
+    CONSOLE_WAIT_S = 5.0
+
+    def _holding(self, node_id: str) -> Callable[[bytes], None]:
+        """The callback a breakpoint calls the moment it catches something."""
+
+        def caught(apdu: bytes) -> None:
+            self._mark(node_id, detail="holding %s" % apdu.hex().upper())
+            self._log(
+                "warn",
+                "%s is holding %s. Release it with `release`, or stop."
+                % (node_id, apdu.hex().upper()),
+                "runtime",
+            )
+
+        return caught
+
+    def held(self) -> List[str]:
+        """Breakpoints with a command in hand, in chain order."""
+        return [
+            node_id
+            for node_id in self._transform_ids
+            if getattr(self._transform_by_id.get(node_id), "held", None) is not None
+        ]
+
+    def release(
+        self, node_id: Optional[str] = None, replacement: Optional[bytes] = None
+    ) -> str:
+        """
+        Let a held breakpoint go, optionally with different bytes.
+
+        Returns the node that was holding, so the console can say which.
+        """
+        holding = self.held()
+        if not holding:
+            raise EngineError("Nothing is held.")
+        if node_id is not None:
+            if node_id not in holding:
+                raise EngineError("%s is not holding anything." % node_id)
+            holding = [node_id]
+
+        chosen = holding[0]
+        transform = self._transform_by_id[chosen]
+        if replacement is not None and not getattr(transform, "editable", False):
+            raise EngineError(
+                "%s does not allow editing the held bytes." % chosen
+            )
+        transform.release(replacement)
+        self._mark(chosen, detail=None)
+        return chosen
+
     def transmit(self, apdu: bytes) -> bytes:
         """
         Push one command through the chain by hand.
 
         This is the console's `tx`. It takes the same lock the terminal's
         driver does, so a hand-sent APDU waits its turn rather than
-        interleaving with the exchange already in flight.
+        interleaving with the exchange already in flight — but it waits with a
+        bound, and refuses outright when it can already name what is in the
+        way. A console thread parked on a breakpoint cannot be told to stop.
         """
         if self._chain is None:
             raise EngineError("Nothing is armed.")
-        return self._chain.transmit(apdu)
+        holding = self.held()
+        if holding:
+            raise EngineError(
+                "%s is holding a command. Release it first, or stop." % holding[0]
+            )
+        return self._chain.transmit(apdu, wait=self.CONSOLE_WAIT_S)
 
     def wait(self, timeout: Optional[float] = None) -> bool:
         """Block until the driver finishes. True when it did."""
@@ -310,6 +466,7 @@ class Engine:
                     log.debug("transform close failed", exc_info=True)
         self._transforms = []
         self._transform_ids = []
+        self._transform_by_id = {}
 
         if self._card is not None:
             try:
@@ -390,7 +547,9 @@ class _Observer:
             )
         )
 
-    def exchanged(self, asked: bytes, sent: bytes, response: bytes, elapsed_ms: float) -> None:
+    def exchanged(
+        self, asked: bytes, sent: bytes, response: bytes, elapsed_ms: float
+    ) -> None:
         engine = self._engine
 
         for node_id in engine._node_ids:
@@ -398,7 +557,9 @@ class _Observer:
             telemetry.status = "live"
             telemetry.apdus += 1
             telemetry.last_ms = elapsed_ms
-            telemetry.mean_ms = engine._means.setdefault(node_id, RollingMean()).add(elapsed_ms)
+            telemetry.mean_ms = engine._means.setdefault(
+                node_id, RollingMean()
+            ).add(elapsed_ms)
             engine.sink.node(node_id, telemetry)
 
         for edge_id in engine._edge_ids:
@@ -408,6 +569,32 @@ class _Observer:
             edge.bytes_out += len(sent)
             edge.bytes_in += len(response)
             engine.sink.edge(edge_id, edge)
+
+    def slow(self, node_id: str, elapsed_ms: float) -> None:
+        """
+        A timing node decided the card was slow enough to ask for more time.
+
+        Reported rather than silently counted, because the node cannot actually
+        send the S(WTX) block itself — only whoever owns the RF or contact
+        interface can — so the operator seeing that it fired is the whole value
+        of having it in the chain today.
+        """
+        engine = self._engine
+        telemetry = engine._telemetry.setdefault(node_id, NodeTelemetry())
+        transform = engine._transform_by_id.get(node_id)
+        requested = getattr(transform, "requested", None)
+        telemetry.detail = (
+            "asked for more time %d time(s)" % requested
+            if isinstance(requested, int)
+            else "asked for more time"
+        )
+        engine.sink.node(node_id, telemetry)
+        engine._log(
+            "warn",
+            "%s: the card took %.1f ms; asked the terminal for more time."
+            % (node_id, elapsed_ms),
+            "runtime",
+        )
 
     def rewrote(self, node_id: str, phase: str, before: bytes, after: bytes) -> None:
         engine = self._engine

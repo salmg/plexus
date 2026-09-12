@@ -230,7 +230,6 @@ pytest
 ## Layout
 
 ```
-schema/catalogue.json   generated — the one description of every node type
 ui/                     the editor (React, @xyflow/react, xterm.js)
   src/graph/            model, validation, YAML
   src/catalogue/        node types — data, never code
@@ -239,7 +238,8 @@ ui/                     the editor (React, @xyflow/react, xterm.js)
   src/panels/           palette, inspector, console
 plexus/                 the runtime (Python)
   graph.py              the model again, and the same checks
-  catalogue.py          reads schema/catalogue.json
+  catalogue.py          reads the catalogue below, wherever it is installed
+  schema/catalogue.json generated — the one description of every node type
   runtime/              engine, the chain, the frames it emits
   nodes/                card / terminal / transform implementations
   adapters/             the only place that imports atrium
@@ -254,7 +254,7 @@ PROTOCOL.md             the WebSocket contract between the two
 ### One catalogue, two readers
 
 A node type's ports, config fields and latency cost are described once, in
-`ui/src/catalogue/index.ts`, and exported to `schema/catalogue.json` with
+`ui/src/catalogue/index.ts`, and exported to `plexus/schema/catalogue.json` with
 `npm run export:catalogue`. The Python side loads that file. Writing the table
 twice would guarantee drift, and the first symptom would be a graph that draws
 in the editor and refuses to run — or worse, runs differently.

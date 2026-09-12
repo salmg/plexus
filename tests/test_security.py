@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 
 from plexus.api import console
@@ -51,7 +52,11 @@ def test_a_trace_node_cannot_write_outside_the_workspace():
 
 
 def test_traversal_out_of_the_workspace_is_refused():
-    for attempt in ("../escape.jsonl", "../../../../escape.jsonl", "logs/../../escape.jsonl"):
+    for attempt in (
+        "../escape.jsonl",
+        "../../../../escape.jsonl",
+        "logs/../../escape.jsonl",
+    ):
         with pytest.raises(PathRefused):
             build_transform("trace", {"path": attempt})
 
@@ -138,7 +143,7 @@ def test_an_origin_can_be_allowed_deliberately(monkeypatch):
 
 def test_a_hostile_origin_is_closed_before_anything_is_accepted():
     with TestClient(create_app()) as client:
-        with pytest.raises(Exception):
+        with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect(
                 "/ws", headers={"origin": "https://evil.example.com"}
             ) as socket:
@@ -163,7 +168,9 @@ def test_an_oversized_frame_is_refused_without_being_parsed():
             socket.send_json({"type": "hello", "version": 1})
             socket.receive_json()
 
-            socket.send_text('{"type":"arm","graph":{"pad":"' + "A" * MAX_FRAME_BYTES + '"}}')
+            socket.send_text(
+                '{"type":"arm","graph":{"pad":"' + "A" * MAX_FRAME_BYTES + '"}}'
+            )
             for _ in range(20):
                 frame = socket.receive_json()
                 if frame.get("type") == "error" and "limit" in frame.get("message", ""):
@@ -212,7 +219,10 @@ def test_a_playbook_cannot_construct_objects():
     loader uses `yaml.safe_load`, so a tag asking for an object is an error
     rather than a call.
     """
-    hostile = 'enabled: true\nresponse_mutations: !!python/object/apply:os.system ["echo pwned"]\n'
+    hostile = (
+        "enabled: true\n"
+        'response_mutations: !!python/object/apply:os.system ["echo pwned"]\n'
+    )
     with pytest.raises(TransformError):
         build_transform("mutation", {"playbook": hostile})
 
@@ -220,6 +230,97 @@ def test_a_playbook_cannot_construct_objects():
 def test_an_empty_playbook_is_refused_rather_than_silently_doing_nothing():
     with pytest.raises(TransformError):
         build_transform("mutation", {"playbook": "   "})
+
+
+def test_a_playbook_cannot_write_its_log_outside_the_workspace():
+    """
+    The hole: atrium takes `log_path` straight out of the playbook document,
+    and `MutationLog` opens it at construction — creating parent directories on
+    the way. A trace node's `path` went through the workspace guard; this one
+    went nowhere near it, so the same arbitrary file write was still available
+    one YAML key over.
+    """
+    escape = Path(tempfile.gettempdir()).resolve() / "plexus-escape" / "mutations.jsonl"
+    if escape.exists():
+        escape.unlink()
+
+    playbook = "enabled: true\nlog_mutations: true\nlog_path: %s\n" % escape.as_posix()
+    with pytest.raises(PathRefused) as refused:
+        build_transform("mutation", {"playbook": playbook})
+
+    assert "outside the workspace" in str(refused.value)
+    assert not escape.exists(), "the log was created before being refused"
+    assert not escape.parent.exists(), "the directory was created anyway"
+
+
+def test_traversal_in_a_playbook_log_path_is_refused_too():
+    playbook = "enabled: true\nlog_path: ../../plexus-escape.jsonl\n"
+    with pytest.raises(PathRefused) as refused:
+        build_transform("mutation", {"playbook": playbook})
+    assert "outside the workspace" in str(refused.value)
+
+
+def test_a_playbook_log_path_inside_the_workspace_still_works():
+    """The legitimate use, which has to keep working."""
+    wanted = REPO / "logs" / "playbook-log-test.jsonl"
+    if wanted.exists():
+        wanted.unlink()
+    try:
+        node = build_transform(
+            "mutation",
+            {"playbook": "enabled: true\nlog_path: logs/playbook-log-test.jsonl\n"},
+        )
+        node.close()
+        assert wanted.exists(), "atrium never opened the log it was handed"
+    finally:
+        if wanted.exists():
+            wanted.unlink()
+
+
+def test_the_playbook_atrium_reloads_is_the_sanitised_one():
+    """
+    Atrium's `reload()` re-reads the playbook at the start of every
+    transaction and takes `log_path` from it again. Writing the operator's text
+    verbatim would have left that path an escape even with the first load
+    checked, so what lands on disk is the document after the guard.
+    """
+    import yaml
+
+    node = build_transform(
+        "mutation",
+        {"playbook": "enabled: true\nlog_path: logs/reload-check.jsonl\n"},
+    )
+    try:
+        on_disk = yaml.safe_load(node._temp.read_text(encoding="utf-8"))
+        # Absolute, resolved, and inside the workspace — not what was typed.
+        assert Path(on_disk["log_path"]).is_absolute()
+        # `relative_to` raises when it is not inside; 3.8 has no is_relative_to.
+        Path(on_disk["log_path"]).resolve().relative_to(workspace())
+    finally:
+        node.close()
+        for leftover in (REPO / "logs" / "reload-check.jsonl",):
+            if leftover.exists():
+                leftover.unlink()
+
+
+def test_the_log_every_rewrite_switch_reaches_atrium():
+    """
+    It did not. The node stored `logMutations` on itself and never read it
+    again; atrium reads `log_mutations` out of the playbook, so the inspector's
+    checkbox did nothing and contradicted the playbook text beside it.
+    """
+    import yaml
+
+    node = build_transform(
+        "mutation",
+        {"playbook": "enabled: true\nlog_mutations: true\n", "logMutations": False},
+    )
+    try:
+        on_disk = yaml.safe_load(node._temp.read_text(encoding="utf-8"))
+        assert on_disk["log_mutations"] is False
+        assert "log_path" not in on_disk
+    finally:
+        node.close()
 
 
 def test_a_graph_naming_an_unknown_node_type_is_refused():

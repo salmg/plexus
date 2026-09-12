@@ -171,12 +171,181 @@ export function validate(graph: PlexusGraph, devices: Device[]): Problem[] {
     return problems;
   }
 
+  problemsFromEdges(graph, active, problems);
   problemsFromPorts(graph, active, problems);
   problemsFromDevices(active, devices, problems);
   problemsFromHosts(graph, active, problems);
   problemsFromTiming(graph, active, problems);
 
   return problems;
+}
+
+/**
+ * Are the edges legal — for a graph that arrived rather than one being drawn?
+ *
+ * `canConnect` refuses these while the wire is in the air, which covers every
+ * edge *you* make. It covers nothing about a graph that came from a file: Open
+ * a `.plexus.yaml` with a cycle, a self-edge, two requesters wired together or
+ * one port carrying two conversations and the canvas drew it clean, Run stayed
+ * enabled, and the runtime found out.
+ *
+ * Same conditions and same wording as `canConnect` above and as
+ * `_edge_problems` in `plexus/graph.py`, so all three agree about what a legal
+ * graph is.
+ */
+function problemsFromEdges(
+  graph: PlexusGraph,
+  active: PlexusNode[],
+  out: Problem[],
+): void {
+  const alive = new Set(active.map((n) => n.id));
+  const claimed = new Map<string, string>();
+  const nodeOf = (id: string) => graph.nodes.find((n) => n.id === id);
+
+  for (const edge of graph.edges) {
+    // An edge onto a disabled node is not an error — disabling is how you park
+    // part of a rig.
+    if (!alive.has(edge.from.node) || !alive.has(edge.to.node)) continue;
+
+    const src = nodeOf(edge.from.node);
+    const dst = nodeOf(edge.to.node);
+    if (!src || !dst) continue;
+
+    if (edge.from.node === edge.to.node) {
+      out.push({
+        code: "self-edge",
+        level: "error",
+        nodeId: src.id,
+        edgeId: edge.id,
+        message: t("check.selfEdge", { node: nodeLabel(src) }),
+      });
+      continue;
+    }
+
+    const srcPort = findPort(src, edge.from.port);
+    const dstPort = findPort(dst, edge.to.port);
+
+    if (!srcPort || !dstPort) {
+      const missing = srcPort ? edge.to : edge.from;
+      const owner = srcPort ? dst : src;
+      out.push({
+        code: "unknown-port",
+        level: "error",
+        nodeId: owner.id,
+        edgeId: edge.id,
+        message: t("check.unknownPort", {
+          port: missing.port,
+          node: nodeLabel(owner),
+        }),
+      });
+      continue;
+    }
+
+    if (srcPort.channel !== dstPort.channel) {
+      out.push({
+        code: "wrong-channel",
+        level: "error",
+        nodeId: src.id,
+        edgeId: edge.id,
+        message: t("connect.wrongChannel", {
+          from: srcPort.channel,
+          to: dstPort.channel,
+        }),
+      });
+      continue;
+    }
+
+    if (srcPort.role === dstPort.role) {
+      out.push({
+        code: "same-role",
+        level: "error",
+        nodeId: src.id,
+        edgeId: edge.id,
+        message: t(
+          srcPort.role === "requester" ? "connect.bothAsk" : "connect.bothAnswer",
+        ),
+      });
+      continue;
+    }
+
+    for (const [ref, port, owner] of [
+      [edge.from, srcPort, src],
+      [edge.to, dstPort, dst],
+    ] as const) {
+      const key = `${ref.node}:${ref.port}`;
+      const held = claimed.get(key);
+      if (held !== undefined && held !== edge.id) {
+        out.push({
+          code: "port-contended",
+          level: "error",
+          nodeId: owner.id,
+          edgeId: edge.id,
+          message: t("check.portContended", {
+            port: portLabel(port),
+            node: nodeLabel(owner),
+          }),
+        });
+      } else {
+        claimed.set(key, edge.id);
+      }
+    }
+  }
+
+  const loop = findCycle(graph, alive);
+  if (loop.length > 0) {
+    out.push({
+      code: "cycle",
+      level: "error",
+      nodeId: loop[0],
+      message: t("check.cycle", {
+        nodes: loop
+          .map((id) => {
+            const node = nodeOf(id);
+            return node ? nodeLabel(node) : id;
+          })
+          .join(" → "),
+      }),
+    });
+  }
+}
+
+/** The first cycle reachable by following edges, as a node-id path. */
+function findCycle(graph: PlexusGraph, alive: Set<string>): string[] {
+  const following = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    following.set(edge.from.node, [
+      ...(following.get(edge.from.node) ?? []),
+      edge.to.node,
+    ]);
+  }
+
+  const GREY = 1;
+  const BLACK = 2;
+  const shade = new Map<string, number>();
+
+  const walk = (id: string, path: string[]): string[] => {
+    shade.set(id, GREY);
+    path.push(id);
+    for (const next of following.get(id) ?? []) {
+      const seen = shade.get(next);
+      if (seen === GREY) return [...path.slice(path.indexOf(next)), next];
+      if (seen === undefined) {
+        const found = walk(next, path);
+        if (found.length > 0) return found;
+      }
+    }
+    path.pop();
+    shade.set(id, BLACK);
+    return [];
+  };
+
+  for (const id of alive) {
+    if (shade.get(id) === undefined) {
+      const found = walk(id, []);
+      if (found.length > 0) return found;
+    }
+  }
+  return [];
 }
 
 function problemsFromPorts(
