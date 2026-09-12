@@ -48,3 +48,9 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The relay runs on its own thread, and an exception there is only a warning by
+# default — a test can pass green while the thread driving the card died. It
+# did, once. Make it fail.
+filterwarnings = [
+  "error::pytest.PytestUnhandledThreadExceptionWarning",
+]

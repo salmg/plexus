@@ -144,6 +144,30 @@ def test_a_rewrite_is_reported_after_the_card_answer_it_changed():
     assert rewrite.t >= before.t
 
 
+def test_a_finished_terminal_leaves_the_card_bound():
+    """
+    A probe runs out of script; that is not a reason to drop the card. `tx` is
+    the most useful thing in the tool right after a probe has told you what the
+    card is, and releasing here would take it away. The nodes stop claiming to
+    be live, and nothing else changes until someone stops it.
+    """
+    engine = Engine(sink=Sink())
+    engine.arm(probe_over_capture())
+    assert engine.wait(timeout=10.0)
+
+    assert engine.telemetry("p").status == "ready"
+    assert engine.telemetry("p").apdus == 4
+    assert engine._card is not None, "the card should still be bound"
+
+    # And it still answers.
+    response = engine.transmit(bytes.fromhex("00A404000E325041592E5359532E444446303100"))
+    assert response.endswith(b"\x90\x00")
+
+    engine.stop()
+    assert engine._card is None
+    assert engine.telemetry("p").status == "idle"
+
+
 def test_stopping_releases_and_says_so():
     engine = run_to_completion(probe_over_capture())
     assert engine.state == "stopped"

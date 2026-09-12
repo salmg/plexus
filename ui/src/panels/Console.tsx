@@ -27,11 +27,24 @@ const RESET = "\x1b[0m";
 const RED = "\x1b[31m";
 const AMBER = "\x1b[33m";
 
+/**
+ * Read a design token as a single-line string.
+ *
+ * A wrapped CSS value keeps its newline in the computed style, and handing
+ * that to xterm as a font family is invalid inline CSS — the terminal falls
+ * back to the UI font and draws nothing. Collapsing whitespace here means the
+ * tokens can be formatted however reads best.
+ */
+function token(name: string, fallback: string): string {
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .replace(/\s+/g, " ")
+    .trim();
+  return value || fallback;
+}
+
 function themeFromCss(): Record<string, string> {
-  const read = (name: string, fallback: string) => {
-    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return v || fallback;
-  };
+  const read = token;
   const accent = read("--accent", "#46d9a8");
   return {
     background: read("--surface-sunken", "#0e1116"),
@@ -73,9 +86,7 @@ export function Console() {
     if (!host.current) return;
 
     const terminal = new Terminal({
-      fontFamily: getComputedStyle(document.documentElement)
-        .getPropertyValue("--font-mono")
-        .trim(),
+      fontFamily: token("--font-mono", "Consolas, monospace"),
       fontSize: 12.5,
       lineHeight: 1.35,
       cursorBlink: true,
@@ -90,6 +101,11 @@ export function Console() {
 
     term.current = terminal;
     fit.current = fitAddon;
+
+    // Handy from the browser console while developing; not shipped.
+    if (import.meta.env.DEV) {
+      (window as unknown as Record<string, unknown>).__term = terminal;
+    }
 
     terminal.writeln(`${DIM}Plexus console. Type "help".${RESET}`);
     terminal.write(PROMPT);

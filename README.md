@@ -94,11 +94,25 @@ atrium, no Python — with an example rig loaded so there is something to read.
 The top bar always says which runtime is answering, so a simulated result is
 never mistaken for a card.
 
-To point it at a real runtime:
+To point it at the real runtime, start that too:
 
 ```bash
-npm run dev        # then open http://localhost:5173/?runtime=ws://rig.local:8900/ws
+plexus serve                 # ws://127.0.0.1:8900/ws
 ```
+
+then open `http://localhost:5173/?runtime=ws://127.0.0.1:8900/ws`. The top bar
+shows the runtime's address instead of "simulated", the Run button arms the
+graph for real, and the console reaches into it:
+
+```
+plexus> tx 00B2010C00
+-> 00B2010C00
+<- 70145A0854133300123456785F24032512315F3401019000
+```
+
+`serve` binds loopback. Binding anywhere else refuses to start without
+`PLEXUS_API_TOKEN` set — an open control plane for a card relay is not
+something to leave to a warning nobody reads.
 
 The graph model and the checks also run headless, with only PyYAML installed:
 
@@ -171,7 +185,8 @@ plexus/                 the runtime (Python)
   runtime/              engine, the chain, the frames it emits
   nodes/                card / terminal / transform implementations
   adapters/             the only place that imports atrium
-  cli.py                check, show, run, nodes
+  api/                  the WebSocket server (PROTOCOL.md)
+  cli.py                check, show, run, serve, nodes
 examples/               rigs you can open and one you can run
 tests/                  the model, and the engine end to end
 vendor/atrium/          submodule, never edited
@@ -210,11 +225,6 @@ Being straight about the line:
   NFCGate, the card proxy, SimTrace2 and vpcd all resolve, and all refuse at
   bind time naming what they need. They are adapter work against seams that
   already exist in atrium, and they need the rig to be worth writing.
-- **The WebSocket server.** `PROTOCOL.md` is the contract and
-  `ui/src/runtime/ws.ts` is the editor's half; the runtime's half is not
-  written, so the editor still talks to its simulator. The engine already emits
-  exactly the frames the protocol describes — `plexus/runtime/events.py` is
-  those frames — so the server is a transport and little else.
 - **Host-layer nodes.** ISO 8583 is a second channel in the model (`iso8583`)
   with no nodes on it yet. The interesting one is a DE55 bridge, where the two
   halves atrium describes actually meet.

@@ -50,6 +50,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Give up after this many seconds (default 120)",
     )
 
+    serve = sub.add_parser("serve", help="Run the runtime the editor connects to")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8900)
+    serve.add_argument("--reload", action="store_true", help="Restart on code changes")
+
     sub.add_parser("nodes", help="List the node types this build knows")
 
     args = parser.parse_args(argv)
@@ -57,6 +62,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "nodes":
             return _nodes()
+        if args.command == "serve":
+            return _serve(args.host, args.port, args.reload)
         graph = Graph.load(args.path)
         if args.command == "check":
             return _check(graph)
@@ -105,6 +112,25 @@ def _show(graph: Graph) -> int:
 
     one_way = chain_latency(graph, steps[0].id)
     print(f"\n  {one_way} ms each way, {one_way * 2} ms out and back.")
+    return 0
+
+
+def _serve(host: str, port: int, reload: bool) -> int:
+    """Run the runtime, and print the URL to paste into the editor."""
+    try:
+        from plexus.api.server import serve
+    except ImportError as exc:
+        print(
+            "error: the server needs the runtime extra.\n"
+            "    pip install -e \".[runtime]\"\n"
+            "(%s)" % exc,
+            file=sys.stderr,
+        )
+        return 2
+
+    print("Plexus runtime on ws://%s:%d/ws" % (host, port))
+    print("Point the editor at it:  http://localhost:5173/?runtime=ws://%s:%d/ws\n" % (host, port))
+    serve(host=host, port=port, reload=reload)
     return 0
 
 

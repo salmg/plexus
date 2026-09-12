@@ -126,9 +126,12 @@
  * faces below are the ones every machine already renders well at 11px.
  */
 :root {
+  /* One line each, deliberately. These are read out of the computed style and
+   * handed to xterm as a font string; a wrapped value carries the newline with
+   * it, which is invalid inline CSS, and the terminal silently falls back to
+   * the UI font and renders nothing. */
   --font-ui: "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-mono: Consolas, "SF Mono", Menlo, "DejaVu Sans Mono", "Courier New",
-    monospace;
+  --font-mono: Consolas, "SF Mono", Menlo, "DejaVu Sans Mono", "Courier New", monospace;
 
   --radius: 6px;
   --radius-lg: 10px;

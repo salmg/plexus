@@ -191,20 +191,30 @@ class Engine:
     # ── Run ─────────────────────────────────────────────────────────────
 
     def _drive(self) -> None:
-        assert self._chain is not None and self._terminal is not None
+        # Held locally: releasing clears `self._chain`, and reading it back
+        # afterwards is how the first cut of this ended — an AttributeError
+        # raised on the relay thread, where nothing was watching for it.
+        chain, terminal = self._chain, self._terminal
+        if chain is None or terminal is None:
+            return
+
         try:
-            self._terminal.drive(self._chain, self._stop.is_set)
+            terminal.drive(chain, self._stop.is_set)
         except Exception as exc:
             self._log("error", str(exc), "runtime")
             self._mark(self._node_ids[0], status="error", detail=str(exc))
+            self._release_if_idle()
             self._set_state("faulted", str(exc))
             return
-        finally:
-            self._release_if_idle()
 
+        exchanges = chain.exchanges
         if not self._stop.is_set():
-            self._log("info", "The terminal finished. %d exchanges." % self._chain.exchanges)
-            self._set_state("stopped")
+            self._settle()
+            self._log(
+                "info",
+                "The terminal finished after %d exchanges. The card is still bound — "
+                "send APDUs with tx, or stop to release it." % exchanges,
+            )
 
     def stop(self, timeout: float = 5.0) -> None:
         """Ask the driver to stop between exchanges, then release everything."""
@@ -215,8 +225,10 @@ class Engine:
 
         self._set_state("stopping")
         self._stop.set()
-        # A breakpoint holds the driver inside an exchange; let it go so the
-        # thread can reach its next stop check instead of hanging on join.
+        # A pause or a breakpoint holds the driver mid-exchange; let both go so
+        # the thread can reach its next stop check instead of hanging on join.
+        if self._chain is not None:
+            self._chain.resume()
         for transform in self._transforms:
             release = getattr(transform, "release", None)
             if release is not None:
@@ -231,6 +243,31 @@ class Engine:
         self._log("info", "Stopped. Devices released.")
         self._set_state("stopped")
 
+    def pause(self) -> None:
+        """Hold traffic without unbinding. The card stays powered."""
+        if self._chain is not None:
+            self._chain.pause()
+
+    def resume(self) -> None:
+        if self._chain is not None:
+            self._chain.resume()
+
+    @property
+    def paused(self) -> bool:
+        return self._chain is not None and self._chain.paused
+
+    def transmit(self, apdu: bytes) -> bytes:
+        """
+        Push one command through the chain by hand.
+
+        This is the console's `tx`. It takes the same lock the terminal's
+        driver does, so a hand-sent APDU waits its turn rather than
+        interleaving with the exchange already in flight.
+        """
+        if self._chain is None:
+            raise EngineError("Nothing is armed.")
+        return self._chain.transmit(apdu)
+
     def wait(self, timeout: Optional[float] = None) -> bool:
         """Block until the driver finishes. True when it did."""
         if self._thread is None:
@@ -241,8 +278,26 @@ class Engine:
     # ── Release ─────────────────────────────────────────────────────────
 
     def _release_if_idle(self) -> None:
+        """Nothing to do: a fault leaves the rig bound so it can be inspected."""
         if self._stop.is_set():
             return  # stop() is already doing it
+        self._settle()
+
+    def _settle(self) -> None:
+        """
+        The driver has finished, but nothing has been let go.
+
+        A scripted terminal — a probe, a replay — runs out of script; that is
+        not a reason to drop the card. The console's `tx` is the most useful
+        thing in the tool *after* a probe has told you what the card is, and
+        releasing here would take it away. So the nodes stop claiming to be
+        live and everything stays bound until someone stops it.
+
+        A relay terminal never reaches here: it loops until told otherwise.
+        """
+        for node_id in self._node_ids:
+            if self._telemetry.get(node_id, NodeTelemetry()).status != "error":
+                self._mark(node_id, status="ready")
 
     def _release(self) -> None:
         """Close everything that was opened, loudest-first, never raising."""
@@ -284,6 +339,19 @@ class Engine:
     def _next_seq(self) -> int:
         self._seq += 1
         return self._seq - 1
+
+    def devices(self) -> List[Any]:
+        """
+        Hardware the runtime can see.
+
+        Empty in this build, and deliberately so rather than invented: device
+        discovery belongs with the adapters that would bind the devices, and
+        claiming a reader exists that nothing can open would be worse than
+        saying nothing. The graph checks treat an unknown device id as unknown
+        rather than missing, so an empty list does not block a graph — it just
+        means nothing can be confirmed present.
+        """
+        return []
 
     def telemetry(self, node_id: str) -> NodeTelemetry:
         return self._telemetry.get(node_id, NodeTelemetry())

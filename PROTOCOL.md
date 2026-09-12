@@ -55,6 +55,17 @@ over a socket is untrusted input that names hardware and dials addresses.
 `t` is milliseconds since the run started, not a wall clock. `hex` is uppercase
 with no separators.
 
+### A finished terminal is not a stopped runtime
+
+A scripted terminal — a probe, a replay — runs out of script. That is not
+`stopped`: the graph is still armed, the card is still bound, and `tx` still
+reaches it. The runtime stays `running`, moves its nodes from `live` back to
+`ready`, and says so in a `log`. Only `stop` releases anything.
+
+An editor should therefore keep offering Stop after the traffic goes quiet, and
+must not treat silence as the end of a run. A relay terminal never finishes at
+all; it loops until stopped.
+
 ### Batching is expected, not optional
 
 A relay at speed produces more telemetry than a browser wants as individual

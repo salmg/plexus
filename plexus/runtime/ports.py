@@ -21,6 +21,7 @@ that makes a transform's two hooks bracket the same exchange.
 
 from __future__ import annotations
 
+import threading
 import time
 from typing import Callable, List, Optional, Protocol, runtime_checkable
 
@@ -87,11 +88,40 @@ class Chain:
         self.exchanges = 0
         self.errors = 0
 
+        # One card, one conversation at a time. The terminal drives on its own
+        # thread and the console can push an APDU from another; two exchanges
+        # interleaving on one card produces a transcript that never happened.
+        self._lock = threading.Lock()
+
+        # Set means running. Held clear by `pause`, which stops traffic without
+        # unbinding anything — the card stays powered and the readers stay
+        # claimed, so `resume` picks up mid-session rather than starting over.
+        self._resumed = threading.Event()
+        self._resumed.set()
+
+    def pause(self) -> None:
+        self._resumed.clear()
+
+    def resume(self) -> None:
+        self._resumed.set()
+
+    @property
+    def paused(self) -> bool:
+        return not self._resumed.is_set()
+
     def get_atr(self) -> bytes:
-        return self._card.get_atr()
+        with self._lock:
+            return self._card.get_atr()
 
     def transmit(self, apdu: bytes) -> bytes:
         """One command out, one response back, through every transform."""
+        # Waited on outside the lock, or a pause would hold the lock and a
+        # console `resume` could never get in.
+        self._resumed.wait()
+        with self._lock:
+            return self._transmit(apdu)
+
+    def _transmit(self, apdu: bytes) -> bytes:
         started = time.perf_counter()
         command = apdu
 
