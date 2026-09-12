@@ -108,13 +108,54 @@ class Engine:
         if self.running:
             raise EngineError("Already running. Stop first.")
 
+        # ── Checked before anything is touched ──────────────────────────
+        #
+        # A refused graph has to cost you nothing. This used to clear the
+        # previous run's telemetry and release its card *before* discovering
+        # that the new graph would not run, so one typo took away a card
+        # session that was still perfectly usable — and `tx` with it.
+        self.problems = validate(graph, devices)
+        blocking = [p for p in self.problems if p.blocking]
+        steps = chain_of(graph)
+        if not blocking and len(steps) < 2:
+            blocking = [
+                Problem(
+                    "no-chain",
+                    "error",
+                    "No complete chain: a graph needs something that asks and "
+                    "something that answers.",
+                )
+            ]
+            self.problems = self.problems + blocking
+
+        for problem in self.problems:
+            self._log("error" if problem.blocking else "warn", problem.message, "check")
+
+        if blocking:
+            if self._card is None and not self._transforms:
+                # Nothing was running, so "faulted" is the honest answer to a
+                # Run that did not.
+                self._set_state("faulted", blocking[0].message)
+            else:
+                # Something from the last run is still bound and still usable.
+                # Saying "faulted" here would take away the Stop button that
+                # belongs to it.
+                self._log(
+                    "warn",
+                    "Nothing was released — the previous rig is still bound.",
+                    "runtime",
+                )
+            raise EngineError(blocking[0].message)
+
+        # ── Past the point of no return ─────────────────────────────────
+        #
         # `running` only asks whether the relay thread is alive, and two paths
         # deliberately leave everything bound with a dead thread: a fault
         # (`_release_if_idle`) so the rig can be inspected, and a script that
-        # ran out (`_settle`) so `tx` still reaches the card. In both the editor
-        # shows Run again — `isRunning` is false for `faulted`, and `running` is
-        # the state a finished probe leaves — so the next press came in here
-        # with a card open, and `_bind` overwrote `self._card` and
+        # ran out (`_settle`) so `tx` still reaches the card. In both, the
+        # editor shows Run again — `isRunning` is false for `faulted`, and
+        # `running` is the state a finished probe leaves — so the next press
+        # arrived here with a card open, and `_bind` overwrote `self._card` and
         # `self._transforms` without closing either. One reader claimed twice,
         # and nothing left holding the first claim.
         if self._card is not None or self._transforms or self._chain is not None:
@@ -137,23 +178,6 @@ class Engine:
         self._edge_ids = []
 
         self._set_state("arming")
-
-        self.problems = validate(graph, devices)
-        blocking = [p for p in self.problems if p.blocking]
-        for problem in self.problems:
-            self._log("error" if problem.blocking else "warn", problem.message, "check")
-        if blocking:
-            self._set_state("faulted", blocking[0].message)
-            raise EngineError(blocking[0].message)
-
-        steps = chain_of(graph)
-        if len(steps) < 2:
-            message = (
-                "No complete chain: a graph needs something that asks and "
-                "something that answers."
-            )
-            self._set_state("faulted", message)
-            raise EngineError(message)
 
         try:
             self._bind(steps)

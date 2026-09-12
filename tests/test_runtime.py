@@ -827,3 +827,51 @@ def test_arming_again_after_a_fault_releases_too():
         assert closed == ["card"]
     finally:
         engine.stop()
+
+
+def test_a_refused_graph_leaves_the_previous_rig_alone():
+    """
+    A Run you get wrong must cost you nothing. `arm` used to clear the previous
+    run's telemetry and release its card *before* discovering that the new
+    graph would not run, so one typo took away a card session that was still
+    perfectly usable — and `tx` with it.
+    """
+    engine = Engine(sink=Sink())
+    good = probe_over_capture()
+    engine.arm(good)
+    assert engine.wait(timeout=5.0)
+    card = engine._card
+    assert card is not None, "a finished probe keeps the card bound"
+
+    broken = probe_over_capture()
+    broken.edges = []
+
+    with pytest.raises(EngineError):
+        engine.arm(broken)
+    try:
+        assert engine._card is card, "the previous card was released"
+        assert engine.state == "running", "the previous run was declared faulted"
+        assert set(engine._telemetry) == {"p", "c"}, "its telemetry was wiped"
+        # And it is still usable, which is the whole point.
+        assert engine.transmit(bytes.fromhex("00B2010C00")).hex().upper().startswith(
+            "70145A08"
+        )
+        assert any(
+            "still bound" in line.text
+            for line in engine.sink.logs
+            if line.level == "warn"
+        )
+    finally:
+        engine.stop()
+
+
+def test_a_refused_graph_with_nothing_bound_still_faults():
+    """The honest answer to a Run that did not run, when there was nothing to
+    keep."""
+    engine = Engine(sink=Sink())
+    broken = probe_over_capture()
+    broken.edges = []
+
+    with pytest.raises(EngineError):
+        engine.arm(broken)
+    assert engine.state == "faulted"

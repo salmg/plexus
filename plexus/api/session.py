@@ -117,6 +117,7 @@ class Session:
         self._inbox: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue(maxsize=INBOX_LIMIT)
         self._worker: Optional[asyncio.Task] = None
         self.runtime = runtime if runtime is not None else Runtime()
+        self._greeted = False
         self.runtime.attach(self._offer)
 
     @property
@@ -291,6 +292,18 @@ class Session:
     async def handle(self, message: Dict[str, Any]) -> None:
         """One frame from the editor."""
         kind = message.get("type")
+
+        # PROTOCOL.md: "The editor dials ws://<host>:<port>/ws and sends
+        # `hello` first." Nothing enforced it, so a client that never agreed a
+        # protocol version could arm a card relay — the one frame that claims
+        # hardware, from a peer whose idea of these frame shapes was never
+        # checked against this one.
+        if kind != "hello" and not self._greeted:
+            await self._deliver(
+                {"type": "error", "message": "Send hello first; see PROTOCOL.md."}
+            )
+            return
+
         if kind == "hello":
             await self._hello(message)
         elif kind == "arm":
@@ -313,6 +326,8 @@ class Session:
                 }
             )
             raise ProtocolMismatch(str(version))
+
+        self._greeted = True
 
         # Losing the socket is not losing the run, so a reconnecting editor is
         # told everything it needs to catch up rather than being asked to
@@ -388,12 +403,31 @@ def _graph_from_frame(raw: Dict[str, Any]) -> Graph:
     return Graph.from_yaml(yaml.safe_dump(_normalise(raw), sort_keys=False))
 
 def _normalise(raw: Dict[str, Any]) -> Dict[str, Any]:
-    """Turn the editor's JSON node shape into the file's."""
+    """
+    Turn the editor's JSON node shape into the file's.
+
+    Every shape check here earns its place: this runs on a frame that arrived
+    over a socket, and anything it raises that is not a `GraphError` is not
+    caught as one. `position.get("x")` on a list, or `from.get("node")` on the
+    string spelling, raised AttributeError — which used to escape the read loop
+    as "session failed" and release the hardware in the middle of a run.
+    """
+    raw_nodes = raw.get("nodes")
+    if not isinstance(raw_nodes, list):
+        # The same rule `Graph.from_yaml` applies, applied here too — otherwise
+        # a missing `nodes` became `[]` on the way through and arrived as a
+        # legal empty graph.
+        raise GraphError("`nodes` must be a list.")
+
     nodes = []
-    for node in raw.get("nodes") or []:
+    for index, node in enumerate(raw_nodes):
         if not isinstance(node, dict):
             raise GraphError("A node in this graph is not an object.")
-        position = node.get("position") or {}
+        position = node.get("position")
+        if position is None:
+            position = {}
+        if not isinstance(position, dict):
+            raise GraphError("nodes[%d].position must be an object." % index)
         entry = {
             "id": node.get("id"),
             "type": node.get("type"),
@@ -402,24 +436,44 @@ def _normalise(raw: Dict[str, Any]) -> Dict[str, Any]:
         for key in ("label", "host"):
             if node.get(key):
                 entry[key] = node[key]
-        if node.get("disabled"):
+        # `is True`, as in the editor's own reader. See `_node_from`.
+        if node.get("disabled") is True:
             entry["disabled"] = True
         if node.get("config"):
             entry["config"] = node["config"]
         nodes.append(entry)
 
+    raw_edges = raw.get("edges")
+    if raw_edges is None:
+        raw_edges = []
+    if not isinstance(raw_edges, list):
+        raise GraphError("`edges` must be a list.")
+
     edges = []
-    for edge in raw.get("edges") or []:
+    for index, edge in enumerate(raw_edges):
         if not isinstance(edge, dict):
             raise GraphError("An edge in this graph is not an object.")
-        source, target = edge.get("from") or {}, edge.get("to") or {}
-        edges.append(
-            {
-                "id": edge.get("id"),
-                "from": "%s:%s" % (source.get("node"), source.get("port")),
-                "to": "%s:%s" % (target.get("node"), target.get("port")),
-            }
-        )
+        ends = {}
+        for end in ("from", "to"):
+            ref = edge.get(end)
+            if isinstance(ref, str):
+                # The file spelling, sent by something that is not the editor.
+                # Taken as-is; `PortRef.parse` is the one that judges it.
+                ends[end] = ref
+                continue
+            if not isinstance(ref, dict):
+                raise GraphError(
+                    'edges[%d].%s should be {"node", "port"} or "node:port".'
+                    % (index, end)
+                )
+            node_id, port = ref.get("node"), ref.get("port")
+            if not isinstance(node_id, str) or not isinstance(port, str):
+                raise GraphError(
+                    "edges[%d].%s needs a node and a port, both strings."
+                    % (index, end)
+                )
+            ends[end] = "%s:%s" % (node_id, port)
+        edges.append({"id": edge.get("id"), "from": ends["from"], "to": ends["to"]})
 
     return {
         "version": raw.get("version", 1),

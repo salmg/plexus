@@ -37,6 +37,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import secrets
 from contextlib import asynccontextmanager
 from typing import Optional, Set
@@ -144,11 +145,32 @@ def guard_bind(host: str) -> None:
 
 
 def token_ok(offered: Optional[str]) -> bool:
-    """Constant-time when a token is configured; open when one is not."""
+    """
+    Constant-time when a token is configured; open when one is not.
+
+    Compared as bytes because `compare_digest` on `str` refuses anything
+    outside ASCII — it raised TypeError on a non-ASCII token, which is an
+    unhandled exception during the handshake rather than a closed socket. A
+    caller who can choose the token can choose one that crashes the check.
+    """
     expected = os.environ.get(TOKEN_VARIABLE)
     if not expected:
         return True
-    return bool(offered) and secrets.compare_digest(offered, expected)
+    if not offered:
+        return False
+    return secrets.compare_digest(
+        offered.encode("utf-8", "surrogatepass"),
+        expected.encode("utf-8", "surrogatepass"),
+    )
+
+
+async def _too_big(socket: WebSocket, size: int) -> None:
+    await socket.send_json(
+        {
+            "type": "error",
+            "message": "Frame is %d bytes; the limit is %d." % (size, MAX_FRAME_BYTES),
+        }
+    )
 
 
 def create_app() -> FastAPI:
@@ -211,19 +233,45 @@ def create_app() -> FastAPI:
 
         try:
             while True:
-                # Read as text and measure before parsing: `receive_json`
-                # would have already built the object out of however many
-                # megabytes arrived.
-                raw = await socket.receive_text()
-                if len(raw) > MAX_FRAME_BYTES:
-                    await socket.send_json(
-                        {
-                            "type": "error",
-                            "message": "Frame is %d bytes; the limit is %d."
-                            % (len(raw), MAX_FRAME_BYTES),
-                        }
-                    )
+                # Read the raw ASGI message rather than `receive_text()`:
+                # that does `message["text"]`, so one binary frame killed the
+                # session with a KeyError and left the socket open with nobody
+                # reading it. A client that sends bytes gets told so.
+                incoming = await socket.receive()
+                if incoming["type"] == "websocket.disconnect":
+                    raise WebSocketDisconnect(incoming.get("code", 1000))
+
+                raw = incoming.get("text")
+                if raw is None:
+                    payload = incoming.get("bytes")
+                    if payload is None:
+                        continue
+                    # Decoded rather than refused: `send_json(mode="binary")`
+                    # is a legal way to send a frame, and PROTOCOL.md does not
+                    # say which. What is refused is bytes that are not UTF-8.
+                    if len(payload) > MAX_FRAME_BYTES:
+                        await _too_big(socket, len(payload))
+                        continue
+                    try:
+                        raw = payload.decode("utf-8")
+                    except UnicodeDecodeError:
+                        await socket.send_json(
+                            {"type": "error", "message": "Frames are UTF-8 JSON."}
+                        )
+                        continue
+
+                # `len` counts characters and the cap is in bytes — one
+                # character can be four of them, so a frame inside the
+                # character count could still be four times the limit. The
+                # cheap check runs first, so a flood of oversized frames is
+                # rejected without encoding any of them.
+                size = len(raw)
+                if size <= MAX_FRAME_BYTES:
+                    size = len(raw.encode("utf-8"))
+                if size > MAX_FRAME_BYTES:
+                    await _too_big(socket, size)
                     continue
+
                 try:
                     message = json.loads(raw)
                 except ValueError:
@@ -259,11 +307,47 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
+#: Any `token=…` in a URL, however it is spelled.
+_TOKEN_IN_URL = re.compile(r"([?&](?:token|x-plexus-token)=)[^&\s\"']+", re.IGNORECASE)
+
+
+class RedactToken(logging.Filter):
+    """
+    Keeps the token out of the access log.
+
+    A browser cannot set a header on a WebSocket, so `?token=…` is the only way
+    to authenticate one from a page — and uvicorn's access log writes the path
+    it was given, query string and all. The secret then sits in a log file, in
+    a terminal's scrollback, and in whatever collects either, which is a worse
+    place for it than the environment variable it came from.
+
+    Applied in `serve()` rather than at import: a library consumer's logging is
+    theirs to configure.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args:
+            record.args = tuple(
+                _TOKEN_IN_URL.sub(r"\1[redacted]", a) if isinstance(a, str) else a
+                for a in (
+                    record.args
+                    if isinstance(record.args, tuple)
+                    else (record.args,)
+                )
+            )
+        if isinstance(record.msg, str):
+            record.msg = _TOKEN_IN_URL.sub(r"\1[redacted]", record.msg)
+        return True
+
+
 def serve(host: str = "127.0.0.1", port: int = 8900, reload: bool = False) -> None:
     """Run the server. Refuses a non-loopback bind without a token."""
     import uvicorn
 
     guard_bind(host)
+    for name in ("uvicorn.access", "uvicorn.error"):
+        logging.getLogger(name).addFilter(RedactToken())
+
     uvicorn.run(
         "plexus.api.server:app" if reload else app,
         host=host,

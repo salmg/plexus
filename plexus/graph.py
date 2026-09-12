@@ -160,7 +160,18 @@ class Graph:
                 "This build reads version 1."
             )
 
-        nodes = [_node_from(entry, i) for i, entry in enumerate(raw.get("nodes") or [])]
+        # Field for field, this mirrors `parseGraph` in
+        # ui/src/graph/serialize.ts — including where that is lenient. A
+        # divergence means one file is two graphs depending on which half read
+        # it, and the editor is the half whose rules are already written down,
+        # so these follow it rather than improve on it.
+        #
+        # `nodes` missing is an error there. It used to load as an empty graph
+        # here, so a truncated file was "valid, just empty" to `plexus check`.
+        raw_nodes = raw.get("nodes")
+        if not isinstance(raw_nodes, list):
+            raise GraphError("`nodes` must be a list.")
+        nodes = [_node_from(entry, i) for i, entry in enumerate(raw_nodes)]
 
         seen: set[str] = set()
         for node in nodes:
@@ -168,13 +179,26 @@ class Graph:
                 raise GraphError(f'Two nodes share the id "{node.id}".')
             seen.add(node.id)
 
-        edges = [
-            _edge_from(entry, i, seen) for i, entry in enumerate(raw.get("edges") or [])
+        # Absent means none; anything else that is not a list is an error.
+        raw_edges = raw.get("edges")
+        if raw_edges is None:
+            raw_edges = []
+        if not isinstance(raw_edges, list):
+            raise GraphError("`edges` must be a list.")
+        edges = [_edge_from(entry, i, seen) for i, entry in enumerate(raw_edges)]
+
+        # `hosts` is the one field the editor shrugs at: a non-list is ignored,
+        # and entries that are not mappings are dropped rather than refused.
+        raw_hosts = raw.get("hosts")
+        host_entries = [
+            h
+            for h in (raw_hosts if isinstance(raw_hosts, list) else [])
+            if isinstance(h, dict)
         ]
 
         return cls(
-            name=str(raw.get("name") or "untitled"),
-            hosts=[_host_from(h, i) for i, h in enumerate(raw.get("hosts") or [])],
+            name=_opt_str(raw.get("name")) or "untitled",
+            hosts=[_host_from(h, i) for i, h in enumerate(host_entries)],
             nodes=nodes,
             edges=edges,
         )
@@ -642,6 +666,38 @@ def chain(graph: Graph) -> list[Node]:
 # ── Parsing helpers ─────────────────────────────────────────────────────────
 
 
+def _opt_str(value: Any) -> str | None:
+    """
+    The value if it is a string, otherwise nothing.
+
+    `typeof x === "string" ? x : undefined`, which is what the editor does with
+    every optional text field. Taking these as-is is how a non-string `label`
+    reached `Node.name`, where `.strip()` raised AttributeError — a crash on
+    the Python side for a file the editor had quietly accepted.
+    """
+    return value if isinstance(value, str) else None
+
+
+def _position(at: Any) -> tuple[int, int]:
+    """
+    Two numbers, or the origin.
+
+    `int(at[0])` accepted the string "40" and raised ValueError on "x" — and a
+    ValueError is not a GraphError, so over a socket it tore the session down
+    instead of answering with an error frame. The editor requires numbers, so
+    this requires numbers. Booleans are excluded because `isinstance(True,
+    int)` is true in Python and `typeof true === "number"` is false in
+    JavaScript, and this file exists to agree with that one.
+    """
+    if (
+        isinstance(at, (list, tuple))
+        and len(at) == 2
+        and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in at)
+    ):
+        return (int(at[0]), int(at[1]))
+    return (0, 0)
+
+
 def _node_from(entry: Any, index: int) -> Node:
     if not isinstance(entry, dict):
         raise GraphError(f"Node {index} is not a mapping.")
@@ -653,22 +709,18 @@ def _node_from(entry: Any, index: int) -> Node:
             f'Node "{node_id}" has type "{type_key}", which this build does not know.'
         )
 
-    at = entry.get("at")
-    position = (
-        (int(at[0]), int(at[1]))
-        if isinstance(at, (list, tuple)) and len(at) == 2
-        else (0, 0)
-    )
     config = entry.get("config")
 
     return Node(
         id=node_id,
         type=type_key,
-        position=position,
+        position=_position(entry.get("at")),
         config=config if isinstance(config, dict) else {},
-        label=entry.get("label"),
-        host=entry.get("host"),
-        disabled=bool(entry.get("disabled", False)),
+        label=_opt_str(entry.get("label")),
+        host=_opt_str(entry.get("host")),
+        # `is True`, not `bool(...)`: the editor's rule is `=== true`, so
+        # `disabled: 1` parked a node here and left it running there.
+        disabled=entry.get("disabled") is True,
     )
 
 
@@ -676,8 +728,12 @@ def _edge_from(entry: Any, index: int, known: set[str]) -> Edge:
     if not isinstance(entry, dict):
         raise GraphError(f"Edge {index} is not a mapping.")
 
-    source = PortRef.parse(entry.get("from", ""), f"edges[{index}].from")
-    target = PortRef.parse(entry.get("to", ""), f"edges[{index}].to")
+    source = PortRef.parse(
+        _require_str(entry.get("from"), f"edges[{index}].from"), f"edges[{index}].from"
+    )
+    target = PortRef.parse(
+        _require_str(entry.get("to"), f"edges[{index}].to"), f"edges[{index}].to"
+    )
 
     for ref, where in ((source, "from"), (target, "to")):
         if ref.node not in known:
@@ -685,21 +741,26 @@ def _edge_from(entry: Any, index: int, known: set[str]) -> Edge:
                 f'edges[{index}].{where} names node "{ref.node}", which is not defined.'
             )
 
-    edge_id = entry.get("id") or f"{source}->{target}"
-    return Edge(id=str(edge_id), source=source, target=target)
+    # A non-string id was stringified here and ignored there, so `id: 5` gave
+    # one graph two different edge ids depending on who read it.
+    return Edge(
+        id=_opt_str(entry.get("id")) or f"{source}->{target}",
+        source=source,
+        target=target,
+    )
 
 
 def _host_from(entry: Any, index: int) -> Host:
     if not isinstance(entry, dict):
         raise GraphError(f"Host {index} is not a mapping.")
     host_id = _require_str(entry.get("id"), f"hosts[{index}].id")
+    name = entry.get("name")
     return Host(
         id=host_id,
-        name=str(entry.get("name") or host_id),
-        address=entry.get("address"),
-        note=entry.get("note"),
+        name=name if isinstance(name, str) else host_id,
+        address=_opt_str(entry.get("address")),
+        note=_opt_str(entry.get("note")),
     )
-
 
 def _node_to(node: Node) -> dict[str, Any]:
     out: dict[str, Any] = {"id": node.id, "type": node.type}

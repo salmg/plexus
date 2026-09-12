@@ -25,6 +25,10 @@ from plexus.nodes.transform import MAX_APDU_BYTES, TransformError
 from plexus.nodes.transform import build as build_transform
 from plexus.runtime import Engine
 
+# The bounded frame collector, not a second copy of it: an unbounded read here
+# would hang this suite exactly as it hung that one.
+from tests.test_server import collect
+
 REPO = Path(__file__).resolve().parent.parent
 CAPTURE = "tests/captures/mastercard-probe.jsonl"
 
@@ -331,3 +335,144 @@ def test_a_graph_naming_an_unknown_node_type_is_refused():
             "version: 1\nname: x\nnodes:\n  - id: a\n    type: plexus.evil\n"
         )
     assert "does not know" in str(caught.value)
+
+
+# ── The handshake, and what can be sent through it ──────────────────────────
+
+
+def test_a_non_ascii_token_is_refused_rather_than_crashing(monkeypatch):
+    """
+    `secrets.compare_digest` on `str` refuses anything outside ASCII, so a
+    non-ASCII token raised TypeError *during the handshake* — an unhandled
+    exception where a closed socket belonged. Whoever dials chooses the token
+    they offer, so whoever dials chose whether the check crashed.
+    """
+    monkeypatch.setenv(server_module.TOKEN_VARIABLE, "sekrit")
+    assert server_module.token_ok("sékrit") is False
+    assert server_module.token_ok("\U0001f600") is False
+    assert server_module.token_ok("sekrit") is True
+
+    # And with a non-ASCII token configured, the right one still works.
+    monkeypatch.setenv(server_module.TOKEN_VARIABLE, "clé-secrète")
+    assert server_module.token_ok("clé-secrète") is True
+    assert server_module.token_ok("cle-secrete") is False
+
+
+def test_a_binary_frame_is_answered_rather_than_killing_the_session():
+    """
+    `receive_text()` does `message["text"]`, so one binary frame raised
+    KeyError out of the read loop — "session failed", socket left open with
+    nobody reading it.
+    """
+    with TestClient(create_app()) as client:
+        with client.websocket_connect("/ws") as socket:
+            socket.send_json({"type": "hello", "version": 1})
+            collect(socket, until="state")
+
+            # Valid JSON, sent as bytes: accepted, because PROTOCOL.md does not
+            # say which framing and `send_json(mode="binary")` is legal.
+            socket.send_bytes(b'{"type": "command", "id": "b", "line": "help"}')
+            result = next(
+                f for f in collect(socket, until="result") if f["type"] == "result"
+            )
+            assert result["id"] == "b"
+
+            # Bytes that are not UTF-8: a message, not a traceback.
+            socket.send_bytes(b"\xff\xfe\x00\x01")
+            error = next(
+                f for f in collect(socket, until="error") if f["type"] == "error"
+            )
+            assert "UTF-8" in error["message"]
+
+            # Still alive.
+            socket.send_json({"type": "command", "id": "after", "line": "help"})
+            assert (
+                next(
+                    f for f in collect(socket, until="result") if f["type"] == "result"
+                )["id"]
+                == "after"
+            )
+
+
+def test_the_frame_cap_counts_bytes_not_characters():
+    """
+    The constant is named MAX_FRAME_BYTES and was compared against `len()`,
+    which counts characters. One character can be four bytes, so a frame
+    inside the limit by that measure could be four times over it.
+    """
+    # A quarter of the cap in characters, four bytes each: over the limit.
+    wide = "\U0001f600" * (MAX_FRAME_BYTES // 4 + 100)
+    assert len(wide) < MAX_FRAME_BYTES
+    assert len(wide.encode("utf-8")) > MAX_FRAME_BYTES
+
+    with TestClient(create_app()) as client:
+        with client.websocket_connect("/ws") as socket:
+            socket.send_json({"type": "hello", "version": 1})
+            collect(socket, until="state")
+            socket.send_text('{"type":"arm","graph":{"pad":"' + wide + '"}}')
+            error = next(
+                f for f in collect(socket, until="error") if f["type"] == "error"
+            )
+            assert "the limit is" in error["message"]
+
+
+def test_nothing_can_be_armed_before_hello():
+    """
+    PROTOCOL.md: the editor "sends `hello` first". Nothing enforced it, so a
+    client that had never agreed a protocol version could arm a card relay.
+    """
+    with TestClient(create_app()) as client:
+        with client.websocket_connect("/ws") as socket:
+            for frame in (
+                {"type": "arm", "graph": {}},
+                {"type": "stop"},
+                {"type": "command", "id": "x", "line": "help"},
+            ):
+                socket.send_json(frame)
+                error = next(
+                    f for f in collect(socket, until="error") if f["type"] == "error"
+                )
+                assert "hello first" in error["message"], frame["type"]
+
+            # And after hello, the same frames are answered.
+            socket.send_json({"type": "hello", "version": 1})
+            collect(socket, until="state")
+            socket.send_json({"type": "command", "id": "ok", "line": "help"})
+            assert (
+                next(
+                    f for f in collect(socket, until="result") if f["type"] == "result"
+                )["id"]
+                == "ok"
+            )
+
+
+def test_a_token_in_the_url_is_kept_out_of_the_access_log():
+    """
+    A browser cannot set a header on a WebSocket, so `?token=…` is the only
+    way to authenticate one from a page — and uvicorn logs the path it was
+    given, query string and all. The secret then sits in a log file and in
+    whatever collects it.
+    """
+    import logging
+
+    redact = server_module.RedactToken()
+
+    record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 1,
+        '%s - "%s %s HTTP/1.1" %d',
+        ("127.0.0.1:1", "GET", "/ws?token=s3cret-value&x=1", 101),
+        None,
+    )
+    assert redact.filter(record) is True
+    rendered = record.getMessage()
+    assert "s3cret-value" not in rendered
+    assert "token=[redacted]" in rendered
+    assert "x=1" in rendered, "only the token is redacted"
+
+    # Also when the whole line is already interpolated.
+    plain = logging.LogRecord(
+        "uvicorn.error", logging.INFO, __file__, 1,
+        "connection open: /ws?x-plexus-token=other-secret", None, None,
+    )
+    redact.filter(plain)
+    assert "other-secret" not in plain.getMessage()

@@ -582,3 +582,104 @@ def test_a_disabled_node_does_not_trip_the_edge_checks():
         """
     )
     assert not [p for p in validate(graph) if p.blocking]
+
+
+# ── Reading a file: the same file, the same graph ───────────────────────────
+#
+# `parseGraph` in ui/src/graph/serialize.ts is the other half of this. Where
+# the two disagreed, one file was two graphs depending on which half read it —
+# and in three of these cases the Python half did not merely disagree, it
+# raised something that is not a GraphError, which over a socket is the
+# difference between an error frame and a torn-down session.
+
+
+def one_node(extra: str = "") -> Graph:
+    """A one-node graph, with `extra` lines added to that node."""
+    return Graph.from_yaml(
+        "version: 1\nname: x\nnodes:\n  - id: t\n    type: probe\n" + extra
+    )
+
+
+def test_a_file_with_no_nodes_key_is_refused_not_read_as_empty():
+    """The editor throws "`nodes` must be a list."; this used to load a graph
+    with no nodes at all, so a truncated file passed `plexus check` clean."""
+    with pytest.raises(GraphError) as caught:
+        Graph.from_yaml("version: 1\nname: truncated\n")
+    assert "must be a list" in str(caught.value)
+
+
+def test_edges_absent_is_no_edges_but_a_non_list_is_refused():
+    assert Graph.from_yaml("version: 1\nname: x\nnodes: []\n").edges == []
+    with pytest.raises(GraphError):
+        Graph.from_yaml("version: 1\nname: x\nnodes: []\nedges: {}\n")
+
+
+def test_only_disabled_true_disables_a_node():
+    """`bool(1)` is true in Python; `1 === true` is false in JavaScript. So
+    `disabled: 1` parked a node here and left it running there."""
+    for spelling, parked in (("true", True), ("1", False), ('"yes"', False)):
+        graph = one_node("    disabled: %s\n" % spelling)
+        assert graph.node("t").disabled is parked, spelling
+
+
+def test_a_label_that_is_not_a_string_is_dropped_rather_than_crashing():
+    """
+    It was taken as-is, so `Node.name` did `(42).strip()` and raised
+    AttributeError — inside `validate`, which every caller expects to return
+    problems rather than explode. The editor drops it.
+    """
+    graph = one_node("    label: 42\n")
+    assert graph.node("t").label is None
+    assert graph.node("t").name  # does not raise
+    validate(graph)  # nor does this
+
+
+def test_a_host_that_is_not_a_string_is_dropped_too():
+    assert one_node("    host: 7\n").node("t").host is None
+    assert one_node("    host: workbench\n").node("t").host == "workbench"
+
+
+def test_a_position_that_is_not_two_numbers_is_the_origin():
+    """`int("x")` raised ValueError, which is not a GraphError."""
+    for spelling in ('at: ["x", 1]', "at: [1]", 'at: "40,160"', "at: [true, false]"):
+        graph = one_node("    %s\n" % spelling)
+        assert graph.node("t").position == (0, 0), spelling
+    assert one_node("    at: [40, 160]\n").node("t").position == (40, 160)
+
+
+def test_a_port_reference_that_is_not_a_string_is_refused_by_name():
+    """`re.match` on an int raises TypeError; the editor says what is wrong."""
+    with pytest.raises(GraphError) as caught:
+        Graph.from_yaml(
+            "version: 1\nname: x\n"
+            "nodes:\n  - id: t\n    type: probe\n"
+            "edges:\n  - from: 7\n    to: t:card\n"
+        )
+    assert "edges[0].from" in str(caught.value)
+
+
+def test_a_non_string_edge_id_is_generated_rather_than_stringified():
+    """`id: 5` gave one graph two different edge ids depending on the reader."""
+    graph = Graph.from_yaml(
+        "version: 1\nname: x\n"
+        "nodes:\n"
+        "  - id: t\n    type: probe\n"
+        "  - id: c\n    type: capture\n"
+        "edges:\n  - id: 5\n    from: t:card\n    to: c:terminal\n"
+    )
+    assert graph.edges[0].id == "t:card->c:terminal"
+
+
+def test_hosts_is_the_one_field_that_is_shrugged_at():
+    """A non-list is ignored and non-mapping entries are dropped, because that
+    is what the editor does with it."""
+    shrugged = Graph.from_yaml("version: 1\nname: x\nnodes: []\nhosts: nonsense\n")
+    assert shrugged.hosts == []
+    graph = Graph.from_yaml(
+        "version: 1\nname: x\nnodes: []\nhosts:\n  - nonsense\n  - id: real\n"
+    )
+    assert [h.id for h in graph.hosts] == ["real"]
+
+
+def test_a_graph_named_something_that_is_not_a_string_is_untitled():
+    assert Graph.from_yaml("version: 1\nname: 5\nnodes: []\n").name == "untitled"
