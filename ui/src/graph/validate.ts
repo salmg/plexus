@@ -13,6 +13,8 @@
  */
 
 import { nodeType } from "../catalogue";
+import { nodeTitle, portLabel } from "../i18n/catalogue";
+import { t } from "../i18n";
 import type { PortSpec } from "./types";
 import type { Device, PlexusEdge, PlexusGraph, PlexusNode, PortRef } from "./types";
 
@@ -57,7 +59,8 @@ export function findPort(node: PlexusNode, portId: string): PortSpec | undefined
 }
 
 function nodeLabel(node: PlexusNode): string {
-  return node.label?.trim() || nodeType(node.type)?.title || node.type;
+  const type = nodeType(node.type);
+  return node.label?.trim() || (type ? nodeTitle(type) : node.type);
 }
 
 function edgeTouches(edge: PlexusEdge, ref: PortRef): boolean {
@@ -84,29 +87,33 @@ export function canConnect(
   to: PortRef,
 ): ConnectVerdict {
   if (from.node === to.node) {
-    return { ok: false, reason: "A node cannot talk to itself." };
+    return { ok: false, reason: t("connect.self") };
   }
 
   const src = graph.nodes.find((n) => n.id === from.node);
   const dst = graph.nodes.find((n) => n.id === to.node);
-  if (!src || !dst) return { ok: false, reason: "Node not in this graph." };
+  if (!src || !dst) return { ok: false, reason: t("connect.unknownNode") };
 
   const srcPort = findPort(src, from.port);
   const dstPort = findPort(dst, to.port);
-  if (!srcPort || !dstPort) return { ok: false, reason: "Unknown port." };
+  if (!srcPort || !dstPort) return { ok: false, reason: t("connect.unknownPort") };
 
   if (srcPort.channel !== dstPort.channel) {
     return {
       ok: false,
-      reason: `A ${srcPort.channel} port does not carry ${dstPort.channel}.`,
+      reason: t("connect.wrongChannel", {
+        from: srcPort.channel,
+        to: dstPort.channel,
+      }),
     };
   }
 
   if (srcPort.role === dstPort.role) {
-    const both = srcPort.role === "requester" ? "ask" : "answer";
     return {
       ok: false,
-      reason: `Both ports ${both}. An edge joins one that asks to one that answers.`,
+      reason: t(
+        srcPort.role === "requester" ? "connect.bothAsk" : "connect.bothAnswer",
+      ),
     };
   }
 
@@ -118,13 +125,16 @@ export function canConnect(
       const p = ref.node === from.node ? srcPort : dstPort;
       return {
         ok: false,
-        reason: `The ${p.label} port on ${nodeLabel(n)} is already wired.`,
+        reason: t("connect.alreadyWired", {
+          port: portLabel(p),
+          node: nodeLabel(n),
+        }),
       };
     }
   }
 
   if (createsCycle(graph, from.node, to.node)) {
-    return { ok: false, reason: "That would close a loop." };
+    return { ok: false, reason: t("connect.loop") };
   }
 
   return { ok: true };
@@ -156,7 +166,7 @@ export function validate(graph: PlexusGraph, devices: Device[]): Problem[] {
     problems.push({
       code: "empty",
       level: "warning",
-      message: "The graph is empty. Drag a node from the palette to start.",
+      message: t("check.empty"),
     });
     return problems;
   }
@@ -181,7 +191,7 @@ function problemsFromPorts(
         code: "unknown-type",
         level: "error",
         nodeId: node.id,
-        message: `Unknown node type "${node.type}". This graph was saved by a different version.`,
+        message: t("check.unknownType", { type: node.type }),
       });
       continue;
     }
@@ -199,14 +209,17 @@ function problemsFromPorts(
           code: "unwired-requester",
           level: "error",
           nodeId: node.id,
-          message: `${nodeLabel(node)} has nothing on its ${port.label} port. Wire it to something that answers.`,
+          message: t("check.unwiredRequester", {
+            node: nodeLabel(node),
+            port: portLabel(port),
+          }),
         });
       } else if (port.role === "responder") {
         out.push({
           code: "unwired-responder",
           level: "warning",
           nodeId: node.id,
-          message: `Nothing is asking ${nodeLabel(node)} anything. It will sit idle.`,
+          message: t("check.unwiredResponder", { node: nodeLabel(node) }),
         });
       }
     }
@@ -231,7 +244,7 @@ function problemsFromDevices(
         code: "unbound-device",
         level: "error",
         nodeId: node.id,
-        message: `${nodeLabel(node)} has no device selected.`,
+        message: t("check.unboundDevice", { node: nodeLabel(node) }),
       });
       continue;
     }
@@ -246,7 +259,7 @@ function problemsFromDevices(
         code: "device-missing",
         level: "error",
         nodeId: holders[0].id,
-        message: `${device.name} is not present. Plug it in, or pick another.`,
+        message: t("check.deviceMissing", { name: device.name }),
       });
     }
 
@@ -256,7 +269,10 @@ function problemsFromDevices(
         code: "device-contended",
         level: "error",
         nodeId: holders[1].id,
-        message: `${names} both claim ${device?.name ?? deviceId}. One device cannot be a target and an initiator at the same time — the failure looks like a hardware fault, not a message.`,
+        message: t("check.deviceContended", {
+          nodes: names,
+          name: device?.name ?? deviceId,
+        }),
       });
     }
   }
@@ -285,7 +301,7 @@ function problemsFromHosts(
         level: "warning",
         edgeId: edge.id,
         nodeId: target.id,
-        message: `This edge crosses machines and carries card traffic unauthenticated. Set a pairing secret on ${nodeLabel(target)}, or tunnel it over SSH.`,
+        message: t("check.unpairedLink", { node: nodeLabel(target) }),
       });
     }
   }
@@ -339,14 +355,14 @@ function problemsFromTiming(
         code: "tap-budget",
         level: "error",
         nodeId: node.id,
-        message: `About ${ms} ms per exchange, out and back. A contactless kernel will abandon the transaction well before that.`,
+        message: t("check.tapBudget.fail", { ms }),
       });
     } else if (ms >= TAP_BUDGET_WARN_MS) {
       out.push({
         code: "tap-budget",
         level: "warning",
         nodeId: node.id,
-        message: `About ${ms} ms per exchange, out and back. Close to what a contactless kernel will tolerate — expect dropped taps.`,
+        message: t("check.tapBudget.warn", { ms }),
       });
     }
   }

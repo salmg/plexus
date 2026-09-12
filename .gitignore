@@ -25,3 +25,8 @@ logs/
 .DS_Store
 .idea/
 .vscode/
+
+# Screenshot machinery: a relative-base build and a throwaway Chrome profile.
+# The PNGs it produces are committed; the inputs are not.
+ui/dist-docs/
+ui/scripts/.chrome-screenshots/

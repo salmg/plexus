@@ -4,6 +4,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { Canvas } from "./canvas/Canvas";
 import { TopBar } from "./chrome/TopBar";
 import { validate } from "./graph/validate";
+import { useT } from "./i18n";
 import { Console } from "./panels/Console";
 import { Inspector } from "./panels/Inspector";
 import { Palette } from "./panels/Palette";
@@ -12,6 +13,31 @@ import { useRuntime } from "./store/useRuntime";
 import { CONTACTLESS_RELAY } from "./examples";
 
 const CONSOLE_KEY = "plexus.console-open";
+
+/*
+ * Storage that is allowed to be unavailable.
+ *
+ * A private window, a browser with site data blocked, or a page opened from
+ * `file://` all make `localStorage` *throw* rather than return nothing — and
+ * this one is read in a `useState` initialiser, so the throw takes the whole
+ * app down before it paints. Remembering which panels were open is not worth
+ * that.
+ */
+function remembered(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function remember(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Not being able to remember a panel is not worth telling anyone about.
+  }
+}
 
 /**
  * Below this the three columns leave the canvas too little to be worth
@@ -28,7 +54,7 @@ export default function App() {
   const init = useRuntime((s) => s.init);
 
   const [consoleOpen, setConsoleOpen] = useState(
-    () => localStorage.getItem(CONSOLE_KEY) !== "0",
+    () => remembered(CONSOLE_KEY) !== "0",
   );
   const [inspectorOpen, setInspectorOpen] = useState(
     () => window.innerWidth >= INSPECTOR_MIN_WIDTH,
@@ -51,7 +77,7 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem(CONSOLE_KEY, consoleOpen ? "1" : "0");
+    remember(CONSOLE_KEY, consoleOpen ? "1" : "0");
   }, [consoleOpen]);
 
   useEffect(() => {
@@ -63,7 +89,13 @@ export default function App() {
     }
   }, [init, setGraph]);
 
-  const problems = useMemo(() => validate(graph, devices), [graph, devices]);
+  // `t` changes identity when the locale does, which is what re-runs the
+  // validator: it writes sentences people read, so its output is language.
+  const t = useT();
+  // `t` is not called here, but its identity changes with the locale and the
+  // validator writes language. Dropping it leaves the checks in the old one.
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
+  const problems = useMemo(() => validate(graph, devices), [graph, devices, t]);
 
   return (
     <div className="shell">

@@ -11,55 +11,80 @@
  * other mode silently breaks.
  */
 
+/*
+ * Dark mode, taken from academy-salmg so the two products read as one
+ * operation. Its ground is a deep blue-slate rather than black, and the surface
+ * ramp, the ink ramp and the line colours are its values unchanged:
+ *
+ *   bg #1d2d3d · surface #24374a · surface-2 #2b4157 · surface-3 #344d66
+ *   ink #f2f2f3 · ink-2 #c9d7e4 · line #2f465c · line-2 #41617f
+ *   accent #94bce3 · ok #45c193 · focus #4cc9f0 · stop #ef867a
+ *
+ * Three deliberate departures, each measured:
+ *
+ *  - **No amber anywhere structural.** The academy's `warn` is #dfa551, which
+ *    reads tan against navy, and the previous Plexus dark used amber for the
+ *    card port — the single most repeated colour in the interface, on every
+ *    terminal-side stripe, port and palette icon. Both port colours now come
+ *    from the blue family, as they already did in light mode. Amber survives
+ *    only as a warning, lifted to a clear gold.
+ *  - **The two port blues are separated in luminance**, not just in hue: the
+ *    academy accent and focus sit 1.17 apart, which is nothing to anyone who
+ *    sees hue poorly. #a9cbee against #3fbcd9 is 1.33, and position still does
+ *    most of the work.
+ *  - **Three inks are lifted a shade.** ink-3, stop and a violet at the
+ *    academy's values fall to 4.19–4.41 against surface-2, and this interface
+ *    puts 10–11px text on surface-2 constantly. Everything below clears 4.5 on
+ *    all four grounds.
+ */
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --canvas-bg: #0b0d10;
-  --canvas-grid: #171b22;
-  --canvas-grid-major: #1e242d;
+  --canvas-bg: #1d2d3d;
+  --canvas-grid: #2a3d51;
+  --canvas-grid-major: #32485e;
 
-  --surface: #14181e;
-  --surface-raised: #1a1f27;
-  --surface-sunken: #0e1116;
-  --surface-hover: #1f252f;
+  --surface: #24374a;
+  --surface-raised: #2b4157;
+  --surface-sunken: #18293a;
+  --surface-hover: #344d66;
 
-  --border: #242b35;
-  --border-strong: #333c49;
-  --border-focus: #46d9a8;
+  --border: #2f465c;
+  --border-strong: #41617f;
+  --border-focus: #94bce3;
 
-  --text: #dfe5ee;
-  --text-dim: #909cae;
-  /* Faint is still the quietest text, but it labels ports and node ids at
-   * 10–11px, so it clears 4.5:1 on every surface it lands on rather than
-   * fading into the ground. */
-  --text-faint: #7d8b9e;
-  --text-inverse: #0b0d10;
+  --text: #f2f2f3;
+  --text-dim: #c9d7e4;
+  /* Faint is the quietest text, but it labels ports and node ids at 10–11px,
+   * so it clears 4.5:1 on every surface it lands on rather than fading out. */
+  --text-faint: #9db2c5;
+  --text-inverse: #1d2d3d;
 
-  --accent: #46d9a8;
-  --accent-dim: #2d8a6b;
-  --accent-wash: rgba(70, 217, 168, 0.12);
+  --accent: #94bce3;
+  --accent-dim: #41617f;
+  --accent-wash: rgba(148, 188, 227, 0.14);
 
-  --port-card: #e0a145;
-  --port-card-wash: rgba(224, 161, 69, 0.16);
-  --port-terminal: #3fb6c4;
-  --port-terminal-wash: rgba(63, 182, 196, 0.16);
-  --port-iso: #a98bd6;
-  --port-iso-wash: rgba(169, 139, 214, 0.16);
+  --port-card: #a9cbee;
+  --port-card-wash: rgba(169, 203, 238, 0.16);
+  --port-terminal: #3fbcd9;
+  --port-terminal-wash: rgba(63, 188, 217, 0.16);
+  --port-iso: #bfa9ee;
+  --port-iso-wash: rgba(191, 169, 238, 0.16);
 
-  --edge: #39414e;
-  --edge-live: #46d9a8;
-  --edge-invalid: #e5534b;
-  --edge-oob: #a98bd6;
+  --edge: #41617f;
+  --edge-live: #45c193;
+  --edge-invalid: #f19a90;
+  --edge-oob: #bfa9ee;
 
-  --ok: #46d9a8;
-  --warn: #e0a145;
-  --danger: #e5534b;
-  --ok-wash: rgba(70, 217, 168, 0.14);
-  --warn-wash: rgba(224, 161, 69, 0.14);
-  --danger-wash: rgba(229, 83, 75, 0.14);
+  --ok: #45c193;
+  --warn: #e6c95e;
+  --danger: #f19a90;
+  --ok-wash: rgba(69, 193, 147, 0.14);
+  --warn-wash: rgba(230, 201, 94, 0.14);
+  --danger-wash: rgba(241, 154, 144, 0.14);
 
-  --shadow-panel: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-panel: 0 1px 3px rgba(8, 16, 26, 0.55);
 }
 
 /*
@@ -126,12 +151,27 @@
  * faces below are the ones every machine already renders well at 11px.
  */
 :root {
-  /* One line each, deliberately. These are read out of the computed style and
+  /*
+   * Aligned with academy-salmg, but downloading nothing.
+   *
+   * The academy uses a native system stack for its reading face and says why:
+   * it costs nothing to fetch, never flashes a fallback, and makes the two
+   * products feel like one operation. That stack sits behind "Segoe UI" here,
+   * which stays in front because the plain non-variable Windows face was an
+   * explicit preference.
+   *
+   * The academy's DM Mono is named first but *not* fetched. This is a tool
+   * that runs on a bench machine, possibly with no route out, and a monospace
+   * that arrives over the network is one that sometimes does not. DM Mono is
+   * used where it is already installed; Consolas carries the rest.
+   *
+   * One line each, deliberately. These are read out of the computed style and
    * handed to xterm as a font string; a wrapped value carries the newline with
    * it, which is invalid inline CSS, and the terminal silently falls back to
-   * the UI font and renders nothing. */
-  --font-ui: "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-mono: Consolas, "SF Mono", Menlo, "DejaVu Sans Mono", "Courier New", monospace;
+   * the UI font and renders nothing.
+   */
+  --font-ui: "Segoe UI", ui-sans-serif, system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: "DM Mono", Consolas, ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", monospace;
 
   --radius: 6px;
   --radius-lg: 10px;

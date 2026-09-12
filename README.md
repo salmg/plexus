@@ -4,6 +4,9 @@ A node canvas for [atrium](https://github.com/salmg/atrium). Wire readers,
 phones, captures and mutations into a relay you can see, run, and reach into
 while it is running.
 
+Designed and provided by **[academy.salmg.net](https://academy.salmg.net)**.
+The manual is in [docs/](docs/README.md).
+
 > **Authorized use only.** For security research on cards, terminals and hosts
 > you own or have written permission to test. Same terms as atrium.
 
@@ -28,11 +31,11 @@ roles:
 - **requester** — I ask. Something on the other end has to answer.
 - **responder** — I answer. I present myself as the thing being asked.
 
-On the `apdu` channel those read as the **card port** (amber, on the right: it
-wants a card to talk to) and the **terminal port** (teal, on the left: it
-behaves as a card would). An edge is legal when two ports share a channel and
-hold opposite roles, and it is always drawn requester → responder — the
-direction a command travels.
+On the `apdu` channel those read as the **card port** (on the right: it wants a
+card to talk to) and the **terminal port** (on the left: it behaves as a card
+would). An edge is legal when two ports share a channel and hold opposite
+roles, and it is always drawn requester → responder — the direction a command
+travels.
 
 ```
   ACR122U target ──► Trace tap ──► Mutation ──► NFCGate session
@@ -101,11 +104,25 @@ position atrium takes — the operating system already decides who can open a
 local socket. Binding anywhere else refuses to start without
 `PLEXUS_API_TOKEN`.
 
+## English and Spanish
+
+Pick a language in the top bar; it is remembered, and a first visit follows the
+browser's own preference. Everything the editor writes moves with it, including
+the parts it generates rather than stores — the checks, the reason a wire was
+refused, the node titles and the port labels on the cards.
+
+The runtime's own words stay in English: they arrive already written, over the
+socket, and translating half a trace would be worse than leaving it whole.
+Adding a third language is one file and no framework — see
+[docs/languages.md](docs/languages.md).
+
 ## The console
 
 Dark mode is not a colour scheme, it is the working mode: the canvas dims and a
-real terminal sits under it. During a relay the useful thing is rarely reading
-the trace — it is reaching into the running process.
+real terminal sits under it. Its palette comes from
+[academy.salmg.net](https://academy.salmg.net)'s own — a deep blue-slate ground
+rather than black — so the two read as one operation. During a relay the useful
+thing is rarely reading the trace; it is reaching into the running process.
 
 ```
 plexus> tx 80CA9F1700

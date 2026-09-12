@@ -25,6 +25,7 @@ import {
 import type { Connection, Edge, Node, NodeChange } from "@xyflow/react";
 
 import { nodeType } from "../catalogue";
+import { tn, useT } from "../i18n";
 import { canConnect } from "../graph/validate";
 import type { Problem } from "../graph/validate";
 import { useGraph } from "../store/useGraph";
@@ -41,6 +42,7 @@ interface CanvasProps {
 }
 
 export function Canvas({ problems }: CanvasProps) {
+  const t = useT();
   const graph = useGraph((s) => s.graph);
   const selection = useGraph((s) => s.selection);
   const select = useGraph((s) => s.select);
@@ -166,7 +168,11 @@ export function Canvas({ problems }: CanvasProps) {
           targetHandle: e.to.port,
           animated: running && !!telemetry,
           className: oob ? "pedge pedge--oob" : "pedge",
-          label: telemetry ? `${telemetry.apdus.toLocaleString()} apdu` : undefined,
+          label: telemetry
+            ? tn("canvas.apdu", telemetry.apdus, {
+                count: telemetry.apdus.toLocaleString(),
+              })
+            : undefined,
           labelBgPadding: [5, 2] as [number, number],
           labelBgBorderRadius: 3,
         };
@@ -199,12 +205,12 @@ export function Canvas({ problems }: CanvasProps) {
       const to = { node: candidate.target, port: candidate.targetHandle };
       const verdict = canConnect(graph, from, to);
       if (!verdict.ok) {
-        refuse(verdict.reason ?? "That connection is not allowed.");
+        refuse(verdict.reason ?? t("canvas.refused"));
         return;
       }
       connect(from, to);
     },
-    [graph, connect, refuse],
+    [graph, connect, refuse, t],
   );
 
   const onNodesChange = useCallback(
@@ -287,50 +293,50 @@ export function Canvas({ problems }: CanvasProps) {
           color="var(--canvas-grid-major)"
         />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable ariaLabel="Graph overview" />
+        <MiniMap pannable zoomable ariaLabel={t("canvas.overview")} />
 
         <Panel position="top-left" className="tools">
-          <div className="tools__group" role="group" aria-label="Mouse tool">
+          <div className="tools__group" role="group" aria-label={t("canvas.tool")}>
             <button
               type="button"
               className={`tools__btn${mode === "pan" ? " is-on" : ""}`}
               onClick={() => setMode("pan")}
               aria-pressed={mode === "pan"}
-              title="Drag the canvas to pan"
+              title={t("canvas.pan.title")}
             >
-              Pan
+              {t("canvas.pan")}
             </button>
             <button
               type="button"
               className={`tools__btn${mode === "select" ? " is-on" : ""}`}
               onClick={() => setMode("select")}
               aria-pressed={mode === "select"}
-              title="Drag a box to select nodes. Middle or right button still pans."
+              title={t("canvas.select.title")}
             >
-              Select
+              {t("canvas.select")}
             </button>
           </div>
 
           {selection.length > 0 && (
             <div className="tools__group tools__group--selection">
               <span className="tools__count">
-                {selection.length} selected
+                {tn("canvas.selected", selection.length)}
               </span>
               <button
                 type="button"
                 className="tools__btn tools__btn--danger"
                 onClick={() => removeNodes(selection)}
-                title="Delete the selected nodes"
+                title={t("canvas.delete.title")}
               >
-                Delete
+                {t("canvas.delete")}
               </button>
               <button
                 type="button"
                 className="tools__btn"
                 onClick={() => select(null)}
-                title="Clear the selection"
+                title={t("canvas.clear.title")}
               >
-                Clear
+                {t("canvas.clear")}
               </button>
             </div>
           )}
@@ -339,11 +345,8 @@ export function Canvas({ problems }: CanvasProps) {
 
       {graph.nodes.length === 0 && (
         <div className="canvas__hint">
-          <p>Drag a node from the palette.</p>
-          <p className="canvas__hint-sub">
-            A chain runs left to right: something that asks, any number of
-            transforms, then something that answers.
-          </p>
+          <p>{t("canvas.empty.title")}</p>
+          <p className="canvas__hint-sub">{t("canvas.empty.hint")}</p>
         </div>
       )}
 

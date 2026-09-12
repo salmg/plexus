@@ -10,6 +10,16 @@ import { useMemo } from "react";
 
 import { nodeType } from "../catalogue";
 import { Icon } from "../catalogue/icons";
+import { tn, useT } from "../i18n";
+import {
+  fieldHelp,
+  fieldLabel,
+  fieldPlaceholder,
+  nodeCaveats,
+  nodeSummary,
+  nodeTitle,
+  optionLabel,
+} from "../i18n/catalogue";
 import type { FieldSpec } from "../catalogue/types";
 import { chainLatency } from "../graph/validate";
 import type { Problem } from "../graph/validate";
@@ -17,11 +27,18 @@ import type { PlexusNode } from "../graph/types";
 import { useGraph } from "../store/useGraph";
 import { useRuntime } from "../store/useRuntime";
 
+/** A node's name as shown: its own label, else the translated type title. */
+function nodeLabelOf(node: PlexusNode): string {
+  const type = nodeType(node.type);
+  return node.label || (type ? nodeTitle(type) : node.type);
+}
+
 interface InspectorProps {
   problems: Problem[];
 }
 
 export function Inspector({ problems }: InspectorProps) {
+  const t = useT();
   const selection = useGraph((s) => s.selection);
   const nodes = useGraph((s) => s.graph.nodes);
 
@@ -31,7 +48,7 @@ export function Inspector({ problems }: InspectorProps) {
   );
 
   return (
-    <aside className="rail rail--right" aria-label="Inspector">
+    <aside className="rail rail--right" aria-label={t("inspector.title")}>
       {selected.length === 1 ? (
         <NodeInspector
           node={selected[0]}
@@ -55,6 +72,7 @@ function MultiInspector({
   nodes: PlexusNode[];
   problems: Problem[];
 }) {
+  const t = useT();
   const removeNodes = useGraph((s) => s.removeNodes);
   const toggleDisabled = useGraph((s) => s.toggleDisabled);
   const select = useGraph((s) => s.select);
@@ -66,12 +84,12 @@ function MultiInspector({
   return (
     <>
       <div className="panel-head">
-        <span>{nodes.length} nodes</span>
+        <span>{tn("inspector.nodes", nodes.length)}</span>
         <button
           type="button"
           className="btn btn--ghost btn--icon"
           onClick={() => select(null)}
-          aria-label="Clear the selection"
+          aria-label={t("canvas.clear.title")}
         >
           ×
         </button>
@@ -79,14 +97,12 @@ function MultiInspector({
 
       <div className="rail__scroll">
         <div className="panel-section">
-          <p className="inspector__summary">
-            Drag any one of them to move the group. Delete removes their wires too.
-          </p>
+          <p className="inspector__summary">{t("inspector.multi.hint")}</p>
           <ul className="selected-list">
             {nodes.map((n) => (
               <li key={n.id}>
                 <button type="button" onClick={() => select(n.id)}>
-                  <span>{n.label || nodeType(n.type)?.title || n.type}</span>
+                  <span>{n.label || nodeLabelOf(n)}</span>
                   <code>{n.id}</code>
                 </button>
               </li>
@@ -102,14 +118,14 @@ function MultiInspector({
             className="btn"
             onClick={() => ids.forEach((id) => toggleDisabled(id))}
           >
-            {allDisabled ? "Enable all" : "Disable all"}
+            {t(allDisabled ? "inspector.enableAll" : "inspector.disableAll")}
           </button>
           <button
             type="button"
             className="btn btn--danger"
             onClick={() => removeNodes(ids)}
           >
-            Delete {nodes.length}
+            {t("inspector.deleteCount", { count: nodes.length })}
           </button>
         </div>
       </div>
@@ -126,6 +142,7 @@ function GraphInspector({
   problems: Problem[];
   hasSelection: boolean;
 }) {
+  const t = useT();
   const graph = useGraph((s) => s.graph);
   const setName = useGraph((s) => s.setName);
   const select = useGraph((s) => s.select);
@@ -137,14 +154,14 @@ function GraphInspector({
   return (
     <>
       <div className="panel-head">
-        <span>Graph</span>
-        <span className="badge">{graph.nodes.length} nodes</span>
+        <span>{t("inspector.graph")}</span>
+        <span className="badge">{tn("inspector.nodes", graph.nodes.length)}</span>
       </div>
 
       <div className="rail__scroll">
         <div className="panel-section">
           <label className="field">
-            <span className="field__label">Name</span>
+            <span className="field__label">{t("inspector.name")}</span>
             <input
               className="input"
               value={graph.name}
@@ -156,8 +173,8 @@ function GraphInspector({
             <dl className="kv">
               {roots.map((r) => (
                 <div key={r.id} style={{ display: "contents" }}>
-                  <dt>{r.label || nodeType(r.type)?.title}</dt>
-                  <dd>{chainLatency(graph, r.id) * 2} ms out and back</dd>
+                  <dt>{r.label || nodeLabelOf(r)}</dt>
+                  <dd>{t("inspector.roundTrip", { ms: chainLatency(graph, r.id) * 2 })}</dd>
                 </div>
               ))}
             </dl>
@@ -165,8 +182,7 @@ function GraphInspector({
 
           {!hasSelection && (
             <p className="field__help" style={{ marginTop: 10 }}>
-              Select a node to configure it. Estimates above are the sum of each
-              node's declared cost, not a measurement.
+              {t("inspector.hint")}
             </p>
           )}
         </div>
@@ -180,6 +196,7 @@ function GraphInspector({
 /* ── A node ─────────────────────────────────────────────────────────────── */
 
 function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem[] }) {
+  const t = useT();
   const type = nodeType(node.type);
   const renameNode = useGraph((s) => s.renameNode);
   const toggleDisabled = useGraph((s) => s.toggleDisabled);
@@ -191,8 +208,7 @@ function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem
     return (
       <div className="panel-section">
         <p className="field__error">
-          This graph contains a node of type “{node.type}”, which this build does
-          not know.
+          {t("inspector.unknownType", { type: node.type })}
         </p>
       </div>
     );
@@ -203,13 +219,13 @@ function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem
       <div className="panel-head">
         <span className="panel-head__titled">
           <Icon name={type.icon} />
-          {type.title}
+          {nodeTitle(type)}
         </span>
         <button
           type="button"
           className="btn btn--ghost btn--icon"
           onClick={() => select(null)}
-          aria-label="Close inspector"
+          aria-label={t("inspector.close")}
         >
           ×
         </button>
@@ -217,18 +233,24 @@ function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem
 
       <div className="rail__scroll">
         <div className="panel-section">
-          <p className="inspector__summary">{type.summary}</p>
+          <p className="inspector__summary">{nodeSummary(type)}</p>
           <dl className="kv">
-            <dt>id</dt>
+            <dt>{t("inspector.id")}</dt>
             <dd>{node.id}</dd>
-            <dt>cost</dt>
-            <dd>{type.latencyMs} ms each way</dd>
+            <dt>{t("inspector.cost")}</dt>
+            <dd>{t("inspector.cost.value", { ms: type.latencyMs })}</dd>
             {telemetry && telemetry.apdus > 0 && (
               <>
-                <dt>seen</dt>
+                <dt>{t("inspector.seen")}</dt>
                 <dd>
-                  {telemetry.apdus.toLocaleString()} apdu
-                  {telemetry.meanMs !== null && `, ${telemetry.meanMs.toFixed(1)} ms mean`}
+                  {telemetry.meanMs === null
+                    ? t("inspector.seen.value", {
+                        count: telemetry.apdus.toLocaleString(),
+                      })
+                    : t("inspector.seen.withMean", {
+                        count: telemetry.apdus.toLocaleString(),
+                        ms: telemetry.meanMs.toFixed(1),
+                      })}
                 </dd>
               </>
             )}
@@ -237,11 +259,11 @@ function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem
 
         <div className="panel-section">
           <label className="field">
-            <span className="field__label">Label</span>
+            <span className="field__label">{t("inspector.label")}</span>
             <input
               className="input"
               value={node.label ?? ""}
-              placeholder={type.title}
+              placeholder={nodeTitle(type)}
               onChange={(e) => renameNode(node.id, e.target.value)}
             />
           </label>
@@ -253,10 +275,10 @@ function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem
 
         {type.caveats && type.caveats.length > 0 && (
           <div className="panel-section">
-            <h3 className="panel-section__title">Worth knowing</h3>
+            <h3 className="panel-section__title">{t("inspector.caveats")}</h3>
             <ul className="caveats">
-              {type.caveats.map((c) => (
-                <li key={c}>{c}</li>
+              {nodeCaveats(type).map((caveat) => (
+                <li key={caveat}>{caveat}</li>
               ))}
             </ul>
           </div>
@@ -266,14 +288,14 @@ function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem
 
         <div className="panel-section inspector__actions">
           <button type="button" className="btn" onClick={() => toggleDisabled(node.id)}>
-            {node.disabled ? "Enable" : "Disable"}
+            {t(node.disabled ? "inspector.enable" : "inspector.disable")}
           </button>
           <button
             type="button"
             className="btn btn--danger"
             onClick={() => removeNode(node.id)}
           >
-            Delete
+            {t("inspector.delete")}
           </button>
         </div>
       </div>
@@ -284,6 +306,7 @@ function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem
 /* ── Generated controls ─────────────────────────────────────────────────── */
 
 function Field({ node, field }: { node: PlexusNode; field: FieldSpec }) {
+  const t = useT();
   const updateConfig = useGraph((s) => s.updateConfig);
   const devices = useGraph((s) => s.devices);
   const value = node.config[field.key];
@@ -298,34 +321,34 @@ function Field({ node, field }: { node: PlexusNode; field: FieldSpec }) {
     return (
       <label className="checkbox">
         <input type="checkbox" checked={value === true} onChange={(e) => set(e.target.checked)} />
-        <span>{field.label}</span>
+        <span>{fieldLabel(node.type, field)}</span>
       </label>
     );
   }
 
-  const help = field.help && <p className="field__help">{field.help}</p>;
+  const helpText = fieldHelp(node.type, field);
+  const help = helpText && <p className="field__help">{helpText}</p>;
 
   if (field.kind === "device") {
     const candidates = devices.filter((d) => d.kind === field.deviceKind);
     return (
       <label className="field">
-        <span className="field__label">{field.label}</span>
+        <span className="field__label">{fieldLabel(node.type, field)}</span>
         <select
           className="select"
           value={typeof value === "string" ? value : ""}
           onChange={(e) => set(e.target.value)}
         >
-          <option value="">Choose a device</option>
+          <option value="">{t("field.chooseDevice")}</option>
           {candidates.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.name}
-              {d.available ? "" : " — not present"}
+              {d.available ? d.name : t("field.notPresent", { name: d.name })}
             </option>
           ))}
         </select>
         {candidates.length === 0 && (
           <p className="field__help">
-            No {field.deviceKind} device is visible to the runtime.
+            {t("field.noDevices", { kind: field.deviceKind })}
           </p>
         )}
         {help}
@@ -336,7 +359,7 @@ function Field({ node, field }: { node: PlexusNode; field: FieldSpec }) {
   if (field.kind === "select") {
     return (
       <label className="field">
-        <span className="field__label">{field.label}</span>
+        <span className="field__label">{fieldLabel(node.type, field)}</span>
         <select
           className="select"
           value={typeof value === "string" ? value : (field.default ?? "")}
@@ -344,7 +367,7 @@ function Field({ node, field }: { node: PlexusNode; field: FieldSpec }) {
         >
           {field.options.map((o) => (
             <option key={o.value} value={o.value}>
-              {o.label}
+              {optionLabel(node.type, field.key, o)}
             </option>
           ))}
         </select>
@@ -356,7 +379,7 @@ function Field({ node, field }: { node: PlexusNode; field: FieldSpec }) {
   if (field.kind === "number") {
     return (
       <label className="field">
-        <span className="field__label">{field.label}</span>
+        <span className="field__label">{fieldLabel(node.type, field)}</span>
         <input
           className="input"
           type="number"
@@ -377,7 +400,7 @@ function Field({ node, field }: { node: PlexusNode; field: FieldSpec }) {
   if (field.kind === "yaml") {
     return (
       <label className="field">
-        <span className="field__label">{field.label}</span>
+        <span className="field__label">{fieldLabel(node.type, field)}</span>
         <textarea
           className="textarea"
           rows={field.rows ?? 12}
@@ -397,17 +420,17 @@ function Field({ node, field }: { node: PlexusNode; field: FieldSpec }) {
 
   return (
     <label className="field">
-      <span className="field__label">{field.label}</span>
+      <span className="field__label">{fieldLabel(node.type, field)}</span>
       <input
         className={`input${field.kind === "hex" ? " input--mono" : ""}`}
         value={text}
-        placeholder={field.placeholder}
+        placeholder={fieldPlaceholder(node.type, field)}
         aria-invalid={badHex || undefined}
         onChange={(e) =>
           set(field.kind === "hex" ? e.target.value.toUpperCase() : e.target.value)
         }
       />
-      {badHex && <p className="field__error">Hex digits only.</p>}
+      {badHex && <p className="field__error">{t("field.hexOnly")}</p>}
       {help}
     </label>
   );
@@ -420,11 +443,12 @@ function ProblemList({
   problems: Problem[];
   onPick: (id: string | null) => void;
 }) {
+  const t = useT();
   if (problems.length === 0) {
     return (
       <div className="panel-section">
-        <h3 className="panel-section__title">Checks</h3>
-        <p className="field__help">Nothing to fix. This graph is ready to arm.</p>
+        <h3 className="panel-section__title">{t("inspector.checks")}</h3>
+        <p className="field__help">{t("inspector.checks.none")}</p>
       </div>
     );
   }
@@ -432,7 +456,7 @@ function ProblemList({
   return (
     <div>
       <div className="panel-head">
-        <span>Checks</span>
+        <span>{t("inspector.checks")}</span>
         <span className="badge">{problems.length}</span>
       </div>
       {problems.map((p, i) => (

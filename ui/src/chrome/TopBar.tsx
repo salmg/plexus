@@ -14,6 +14,7 @@ import type { Problem } from "../graph/validate";
 import { hasBlockingProblem } from "../graph/validate";
 import { emptyGraph } from "../graph/types";
 import type { PlexusGraph } from "../graph/types";
+import { LOCALES, LOCALE_NAMES, tn, useLocale, useT } from "../i18n";
 import { ImportReview } from "./ImportReview";
 import { useGraph } from "../store/useGraph";
 import { isRunning, useRuntime } from "../store/useRuntime";
@@ -33,6 +34,9 @@ export function TopBar({
   inspectorOpen,
   onToggleInspector,
 }: TopBarProps) {
+  const t = useT();
+  const [locale, setLocale] = useLocale();
+
   const graph = useGraph((s) => s.graph);
   const dirty = useGraph((s) => s.dirty);
   const theme = useGraph((s) => s.theme);
@@ -51,6 +55,13 @@ export function TopBar({
 
   const fileInput = useRef<HTMLInputElement | null>(null);
 
+  // Parsed and shown before it is loaded. A graph file is something people
+  // send each other, and it names hardware, addresses and paths — opening one
+  // should not be the same gesture as agreeing to all of that.
+  const [pending, setPending] = useState<{ graph: PlexusGraph; filename: string } | null>(
+    null,
+  );
+
   const running = isRunning(state);
   const blocked = hasBlockingProblem(problems);
   const errors = problems.filter((p) => p.level === "error").length;
@@ -67,13 +78,6 @@ export function TopBar({
     markClean();
   };
 
-  // Parsed and shown before it is loaded. A graph file is something people
-  // send each other, and it names hardware, addresses and paths — opening one
-  // should not be the same gesture as agreeing to all of that.
-  const [pending, setPending] = useState<{ graph: PlexusGraph; filename: string } | null>(
-    null,
-  );
-
   const open = async (file: File) => {
     try {
       setPending({ graph: fromYaml(await file.text()), filename: file.name });
@@ -81,17 +85,28 @@ export function TopBar({
       const message =
         err instanceof GraphParseError
           ? err.message
-          : `Could not read that file: ${err instanceof Error ? err.message : String(err)}`;
+          : t("topbar.unreadable", {
+              message: err instanceof Error ? err.message : String(err),
+            });
       window.alert(message);
     }
   };
 
   return (
     <header className="topbar">
-      <div className="topbar__brand">
+      {/* The wordmark is the credit. A product's own name is the thing people
+          click to find out who made it, so it carries the link rather than a
+          separate byline competing with Run for the eye. */}
+      <a
+        className="topbar__brand"
+        href="https://academy.salmg.net"
+        target="_blank"
+        rel="noreferrer noopener"
+        title={t("app.by")}
+      >
         Plexus
-        <small>node canvas for atrium</small>
-      </div>
+        <small>{t("app.tagline")}</small>
+      </a>
 
       <span className="topbar__name" title={graph.name}>
         {graph.name}
@@ -102,13 +117,13 @@ export function TopBar({
 
       {(errors > 0 || warnings > 0) && (
         <span className={`badge ${errors > 0 ? "badge--danger" : "badge--warn"}`}>
-          {errors > 0 && `${errors} error${errors === 1 ? "" : "s"}`}
+          {errors > 0 && tn("count.errors", errors)}
           {errors > 0 && warnings > 0 && ", "}
-          {warnings > 0 && `${warnings} warning${warnings === 1 ? "" : "s"}`}
+          {warnings > 0 && tn("count.warnings", warnings)}
         </span>
       )}
 
-      <span className="badge" title="Where the graph would actually run">
+      <span className="badge" title={t("topbar.runtime.title")}>
         {runtime.label}
       </span>
 
@@ -117,22 +132,22 @@ export function TopBar({
         className="btn btn--ghost"
         onClick={undo}
         disabled={!canUndo}
-        title="Undo"
+        title={t("topbar.undo")}
       >
-        Undo
+        {t("topbar.undo")}
       </button>
       <button
         type="button"
         className="btn btn--ghost"
         onClick={redo}
         disabled={!canRedo}
-        title="Redo"
+        title={t("topbar.redo")}
       >
-        Redo
+        {t("topbar.redo")}
       </button>
 
       <button type="button" className="btn" onClick={() => fileInput.current?.click()}>
-        Open
+        {t("topbar.open")}
       </button>
       <input
         ref={fileInput}
@@ -146,14 +161,14 @@ export function TopBar({
         }}
       />
       <button type="button" className="btn" onClick={save}>
-        Save
+        {t("topbar.save")}
       </button>
       <button
         type="button"
         className="btn"
         onClick={() => setGraph(emptyGraph(), { clean: true })}
       >
-        New
+        {t("topbar.new")}
       </button>
 
       <button
@@ -161,9 +176,9 @@ export function TopBar({
         className="btn btn--ghost"
         onClick={onToggleConsole}
         aria-pressed={consoleOpen}
-        title="Toggle the console"
+        title={t("topbar.console.title")}
       >
-        Console
+        {t("topbar.console")}
       </button>
 
       <button
@@ -171,34 +186,50 @@ export function TopBar({
         className="btn btn--ghost"
         onClick={onToggleInspector}
         aria-pressed={inspectorOpen}
-        title="Toggle the inspector"
+        title={t("topbar.inspector.title")}
       >
-        Inspector
+        {t("topbar.inspector")}
       </button>
+
+      {/* A select rather than a flag: a flag is a country, and a language is
+          not. Two entries today, and it stays right at more. */}
+      <select
+        className="select topbar__locale"
+        value={locale}
+        onChange={(e) => setLocale(e.target.value as typeof locale)}
+        aria-label={t("topbar.language")}
+        title={t("topbar.language")}
+      >
+        {LOCALES.map((code) => (
+          <option key={code} value={code}>
+            {LOCALE_NAMES[code]}
+          </option>
+        ))}
+      </select>
 
       <button
         type="button"
         className="btn btn--ghost btn--icon"
         onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-        aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-        title={theme === "dark" ? "Light mode" : "Dark mode"}
+        aria-label={t(theme === "dark" ? "topbar.theme.toLight" : "topbar.theme.toDark")}
+        title={t(theme === "dark" ? "topbar.theme.toLight" : "topbar.theme.toDark")}
       >
         {theme === "dark" ? "☾" : "☀"}
       </button>
 
       {running ? (
         <button type="button" className="btn btn--danger" onClick={() => void stop()}>
-          Stop
+          {t("topbar.stop")}
         </button>
       ) : (
         <button
           type="button"
           className="btn btn--primary"
           disabled={blocked}
-          title={blocked ? "Fix the errors in the checks list first" : "Bind devices and start"}
+          title={t(blocked ? "topbar.run.blocked" : "topbar.run.ready")}
           onClick={() => void run(graph)}
         >
-          Run
+          {t("topbar.run")}
         </button>
       )}
 

@@ -16,6 +16,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 
 import type { ApduEvent, LogLine } from "../graph/types";
+import { t as translate, useT } from "../i18n";
 import { useRuntime } from "../store/useRuntime";
 
 // The four colours below are ANSI slots, not literal colours, and the theme
@@ -66,6 +67,7 @@ export function Console() {
   const host = useRef<HTMLDivElement | null>(null);
   const term = useRef<Terminal | null>(null);
   const fit = useRef<FitAddon | null>(null);
+  const t = useT();
   const [muted, setMuted] = useState(false);
   const send = useRuntime((s) => s.send);
 
@@ -107,7 +109,7 @@ export function Console() {
       (window as unknown as Record<string, unknown>).__term = terminal;
     }
 
-    terminal.writeln(`${DIM}Plexus console. Type "help".${RESET}`);
+    terminal.writeln(`${DIM}${translate("console.banner")}${RESET}`);
     terminal.write(PROMPT);
 
     /* ── Line editor ──────────────────────────────────────────────────── */
@@ -285,9 +287,9 @@ export function Console() {
   }, []);
 
   return (
-    <section className="console" aria-label="Console">
+    <section className="console" aria-label={t("console.title")}>
       <div className="panel-head">
-        <span>Console</span>
+        <span>{t("console.title")}</span>
         <div className="console__tools">
           <button
             type="button"
@@ -295,14 +297,14 @@ export function Console() {
             onClick={() => setMuted((m) => !m)}
             aria-pressed={muted}
           >
-            {muted ? "Stream off" : "Stream on"}
+            {t(muted ? "console.streamOff" : "console.streamOn")}
           </button>
           <button
             type="button"
             className="btn btn--ghost"
             onClick={() => term.current?.clear()}
           >
-            Clear
+            {t("console.clear")}
           </button>
         </div>
       </div>

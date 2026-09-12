@@ -17,6 +17,8 @@ import { useEffect, useRef } from "react";
 import { nodeType } from "../catalogue";
 import { Icon } from "../catalogue/icons";
 import { describeIntent } from "../graph/serialize";
+import { tn, useT } from "../i18n";
+import { nodeTitle } from "../i18n/catalogue";
 import type { PlexusGraph } from "../graph/types";
 
 interface ImportReviewProps {
@@ -27,6 +29,7 @@ interface ImportReviewProps {
 }
 
 export function ImportReview({ graph, filename, onLoad, onCancel }: ImportReviewProps) {
+  const t = useT();
   const intent = describeIntent(graph);
   const cancel = useRef<HTMLButtonElement | null>(null);
 
@@ -52,23 +55,25 @@ export function ImportReview({ graph, filename, onLoad, onCancel }: ImportReview
     intent.files.length === 0;
 
   return (
-    <div className="sheet" role="dialog" aria-modal="true" aria-label="Review this graph">
+    <div className="sheet" role="dialog" aria-modal="true" aria-label={t("import.title")}>
       <div className="sheet__panel">
         <header className="sheet__head">
-          <span>Load “{graph.name}”?</span>
+          <span>{t("import.heading", { name: graph.name })}</span>
           <code>{filename}</code>
         </header>
 
         <div className="sheet__body">
           <section className="sheet__section">
-            <h3 className="panel-section__title">{graph.nodes.length} nodes</h3>
+            <h3 className="panel-section__title">
+              {tn("inspector.nodes", graph.nodes.length)}
+            </h3>
             <ul className="sheet__nodes">
               {[...counts].map(([key, count]) => {
                 const type = nodeType(key);
                 return (
                   <li key={key}>
                     <Icon name={type?.icon} />
-                    <span>{type?.title ?? key}</span>
+                    <span>{type ? nodeTitle(type) : key}</span>
                     {count > 1 && <em>×{count}</em>}
                   </li>
                 );
@@ -78,37 +83,33 @@ export function ImportReview({ graph, filename, onLoad, onCancel }: ImportReview
 
           {nothing ? (
             <section className="sheet__section">
-              <p className="field__help">
-                It binds no hardware, dials nothing and names no files.
-              </p>
+              <p className="field__help">{t("import.nothing")}</p>
             </section>
           ) : (
             <section className="sheet__section">
-              <h3 className="panel-section__title">If you arm it, it will</h3>
+              <h3 className="panel-section__title">{t("import.willDo")}</h3>
               <dl className="kv">
                 {intent.devices.length > 0 && (
                   <>
-                    <dt>claim</dt>
+                    <dt>{t("import.claim")}</dt>
                     <dd>{intent.devices.join(", ")}</dd>
                   </>
                 )}
                 {intent.addresses.length > 0 && (
                   <>
-                    <dt>dial</dt>
+                    <dt>{t("import.dial")}</dt>
                     <dd>{intent.addresses.join(", ")}</dd>
                   </>
                 )}
                 {intent.files.length > 0 && (
                   <>
-                    <dt>read or write</dt>
+                    <dt>{t("import.touch")}</dt>
                     <dd>{intent.files.join(", ")}</dd>
                   </>
                 )}
               </dl>
               <p className="field__help" style={{ marginTop: 8 }}>
-                Loading it only draws it. Nothing is claimed or dialled until
-                you press Run, and the runtime confines every path to its
-                workspace.
+                {t("import.reassure")}
               </p>
             </section>
           )}
@@ -116,10 +117,10 @@ export function ImportReview({ graph, filename, onLoad, onCancel }: ImportReview
 
         <footer className="sheet__actions">
           <button ref={cancel} type="button" className="btn" onClick={onCancel}>
-            Cancel
+            {t("import.cancel")}
           </button>
           <button type="button" className="btn btn--primary" onClick={onLoad}>
-            Load
+            {t("import.load")}
           </button>
         </footer>
       </div>

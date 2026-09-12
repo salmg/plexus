@@ -13,6 +13,8 @@ import type { NodeProps } from "@xyflow/react";
 
 import { nodeType } from "../catalogue";
 import { Icon } from "../catalogue/icons";
+import { tn, useT } from "../i18n";
+import { nodeTitle, portLabel } from "../i18n/catalogue";
 import type { NodeTelemetry, PortSpec } from "../graph/types";
 import { useGraph } from "../store/useGraph";
 import { useRuntime } from "../store/useRuntime";
@@ -42,15 +44,16 @@ const STATUS_CLASS: Record<NodeTelemetry["status"], string> = {
 };
 
 /** A colour alone does not say what it means; the hover does. */
-const STATUS_TITLE: Record<NodeTelemetry["status"], string> = {
-  idle: "not bound",
-  ready: "bound, nothing crossing",
-  live: "traffic crossing now",
-  error: "faulted — see the checks",
+const STATUS_KEY: Record<NodeTelemetry["status"], string> = {
+  idle: "node.status.idle",
+  ready: "node.status.ready",
+  live: "node.status.live",
+  error: "node.status.error",
 };
 
 export function PlexusNodeView({ data, selected }: NodeProps) {
   const { nodeId } = data as PlexusNodeData;
+  const t = useT();
 
   const node = useGraph((s) => s.graph.nodes.find((n) => n.id === nodeId));
   const devices = useGraph((s) => s.devices);
@@ -61,7 +64,7 @@ export function PlexusNodeView({ data, selected }: NodeProps) {
   if (!type) {
     return (
       <div className="pnode pnode--broken">
-        <div className="pnode__title">Unknown type</div>
+        <div className="pnode__title">{t("node.unknown")}</div>
         <div className="pnode__id">{node.type}</div>
       </div>
     );
@@ -90,10 +93,10 @@ export function PlexusNodeView({ data, selected }: NodeProps) {
     <div className={classes} data-testid={`node-${node.id}`}>
       <header className="pnode__head">
         <Icon name={type.icon} className="pnode__icon" />
-        <span className="pnode__title">{node.label || type.title}</span>
+        <span className="pnode__title">{node.label || nodeTitle(type)}</span>
         <span
           className={`dot ${telemetry ? STATUS_CLASS[telemetry.status] : ""}`}
-          title={telemetry ? STATUS_TITLE[telemetry.status] : "not armed"}
+          title={t(STATUS_KEY[telemetry?.status ?? "idle"])}
         />
       </header>
 
@@ -102,22 +105,22 @@ export function PlexusNodeView({ data, selected }: NodeProps) {
       <div className="pnode__body">
         {deviceField && (
           <div className={`pnode__bind ${bound ? "" : "is-missing"}`}>
-            {bound ? bound.name : (boundId as string) || "no device"}
+            {bound ? bound.name : (boundId as string) || t("node.noDevice")}
           </div>
         )}
         {!deviceField && <div className="pnode__bind">{summarise(node.config)}</div>}
 
         {telemetry && telemetry.apdus > 0 ? (
           <div className="pnode__stats">
-            <span>{telemetry.apdus.toLocaleString()} apdu</span>
+            <span>{tn("canvas.apdu", telemetry.apdus, { count: telemetry.apdus.toLocaleString() })}</span>
             {telemetry.meanMs !== null && <span>{telemetry.meanMs.toFixed(1)} ms</span>}
             {telemetry.errors > 0 && (
-              <span className="is-error">{telemetry.errors} err</span>
+              <span className="is-error">{t("node.errors", { count: telemetry.errors })}</span>
             )}
           </div>
         ) : (
           <div className="pnode__stats pnode__stats--idle">
-            <span>{type.latencyMs} ms budget</span>
+            <span>{t("node.budget", { ms: type.latencyMs })}</span>
           </div>
         )}
       </div>
@@ -170,7 +173,7 @@ function PortHandle({
         style={port.oob ? undefined : { top: offset }}
         aria-hidden="true"
       >
-        {port.label}
+        {portLabel(port)}
       </span>
     </>
   );
