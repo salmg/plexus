@@ -44,6 +44,9 @@ interface GraphState {
   applySelection: (changes: { id: string; selected: boolean }[]) => void;
   selectAll: () => void;
 
+  /** The graph as it was when the current drag began. See `moveNode`. */
+  dragFrom: PlexusGraph | null;
+
   addNode: (typeKey: string, at: { x: number; y: number }) => string;
   moveNode: (id: string, at: { x: number; y: number }, commit: boolean) => void;
   updateConfig: (id: string, key: string, value: unknown) => void;
@@ -82,6 +85,7 @@ export const useGraph = create<GraphState>((set, get) => {
   return {
     graph: emptyGraph(),
     selection: [],
+    dragFrom: null,
     devices: [],
     theme: "dark",
     dirty: false,
@@ -136,13 +140,36 @@ export const useGraph = create<GraphState>((set, get) => {
     },
 
     // Dragging fires continuously; only the drag's end is worth an undo entry.
+    //
+    // Which is why it cannot use `edit`: that pushes `state.graph`, and by the
+    // time a drag ends `state.graph` is the *moved* graph — every intermediate
+    // position having already been written straight in. Undo restored the
+    // position the node had just been dragged to, so dragging was not undoable
+    // at all. `dragFrom` remembers where things were when the drag started.
     moveNode: (id, at, commit) => {
       const apply = (g: PlexusGraph): PlexusGraph => ({
         ...g,
         nodes: g.nodes.map((n) => (n.id === id ? { ...n, position: at } : n)),
       });
-      if (commit) edit(apply);
-      else set((state) => ({ graph: apply(state.graph), dirty: true }));
+
+      if (!commit) {
+        set((state) => ({
+          graph: apply(state.graph),
+          dragFrom: state.dragFrom ?? state.graph,
+          dirty: true,
+        }));
+        return;
+      }
+
+      set((state) => ({
+        graph: apply(state.graph),
+        // `?? state.graph` for a commit with no drag before it — a click that
+        // moved nothing, or a programmatic move.
+        past: [...state.past, state.dragFrom ?? state.graph].slice(-HISTORY_LIMIT),
+        future: [],
+        dragFrom: null,
+        dirty: true,
+      }));
     },
 
     updateConfig: (id, key, value) =>

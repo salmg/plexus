@@ -11,6 +11,11 @@
  * read, a cryptogram — so the trace reads correctly to someone who knows EMV,
  * but no card ever emitted these bytes and nothing should be concluded from
  * them.
+ *
+ * English, deliberately, and the same English the Python runtime uses. This
+ * file could translate itself — it runs in the browser — but a simulator that
+ * answered `status` in Spanish while the runtime answered in English would
+ * stop being the thing a panel can be built against. See docs/languages.md.
  */
 
 import { nodeType } from "../catalogue";
@@ -403,6 +408,12 @@ const GPO_AMOUNT_LEN = 12;
  */
 function mutateGpo(command: string): string | null {
   if (command.slice(2, 4) !== "A8") return null;
+  // A fixed offset needs a command long enough to have something at it.
+  // `slice` past the end returns a short string rather than failing, so a
+  // GPO shorter than the simulator's own script came back truncated — and
+  // was reported as a genuine rewrite, which is the one thing this function
+  // exists not to do.
+  if (command.length < GPO_AMOUNT_AT + GPO_AMOUNT_LEN) return null;
   const before = command.slice(GPO_AMOUNT_AT, GPO_AMOUNT_AT + GPO_AMOUNT_LEN);
   const after = "000000000001";
   if (before === after) return null;

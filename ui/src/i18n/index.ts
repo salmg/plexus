@@ -150,6 +150,24 @@ export function useT(): typeof t {
   }, [current]);
 }
 
+
+/**
+ * `tn`, for a memo.
+ *
+ * Same trick as `useT`, and it exists for the same reason: a memo over counted
+ * output could not follow the documented rule — "put `t` in its dependency
+ * array" — because there was no `tn` whose identity changed with the locale.
+ * The canvas's edge labels are counted, so their memo listed neither, and
+ * every edge kept its English count until something else invalidated it.
+ */
+export function useTn(): typeof tn {
+  const current = useLocaleStore((s) => s.locale);
+  return useMemo(() => {
+    const bound: typeof tn = (key, count, vars) => tn(key, count, vars);
+    return bound;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current]);
+}
 export function useLocale(): [Locale, (locale: Locale) => void] {
   const current = useLocaleStore((s) => s.locale);
   const setLocale = useLocaleStore((s) => s.setLocale);

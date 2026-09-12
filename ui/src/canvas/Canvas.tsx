@@ -25,7 +25,7 @@ import {
 import type { Connection, Edge, Node, NodeChange } from "@xyflow/react";
 
 import { nodeType } from "../catalogue";
-import { tn, useT } from "../i18n";
+import { useT, useTn } from "../i18n";
 import { canConnect } from "../graph/validate";
 import type { Problem } from "../graph/validate";
 import { useGraph } from "../store/useGraph";
@@ -62,6 +62,7 @@ interface CanvasProps {
 
 export function Canvas({ problems }: CanvasProps) {
   const t = useT();
+  const tn = useTn();
   const graph = useGraph((s) => s.graph);
   const selection = useGraph((s) => s.selection);
   const select = useGraph((s) => s.select);
@@ -196,7 +197,11 @@ export function Canvas({ problems }: CanvasProps) {
           labelBgBorderRadius: 3,
         };
       }),
-    [graph.edges, edgeTelemetry, running],
+    // `tn` is in here because it is what reads the locale, and nothing else in
+    // this list changes when the language does. docs/languages.md warns about
+    // exactly this, and then this memo did it: every edge kept its English
+    // count until something else happened to invalidate the memo.
+    [graph.edges, edgeTelemetry, running, tn],
   );
 
   const refuse = useCallback((reason: string) => {

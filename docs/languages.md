@@ -20,11 +20,24 @@ Note that the node's own name is translated inside the sentence.
 
 ## What is not translated, and why
 
-**The runtime's own words.** Anything the Python side says — the console's
-replies, log lines, bind failures — arrives already written, over the socket.
-Translating half a trace would be worse than leaving it whole in one language,
-and the protocol carries sentences rather than message codes. If that becomes
-worth changing, the change is in `PROTOCOL.md`, not in the dictionaries.
+**A runtime's own words.** Anything a runtime says — the console's replies, log
+lines, bind failures — is the runtime's, not the interface's. From the Python
+side it arrives already written, over a socket that carries sentences rather
+than message codes; translating half a trace would be worse than leaving it
+whole in one language.
+
+The simulator is the case that reason does not cover, because it runs in the
+browser and could translate itself. It does not, deliberately: it exists so
+that a panel built against it works against a card, and a simulator that
+answered `status` in Spanish while the runtime answered in English would stop
+being the same thing. A console is a runtime's surface, like a shell's, and the
+one it speaks is English in both.
+
+What *is* translated is the console the editor owns around it — the panel
+title, the banner, the Clear button. The boundary is who wrote the sentence.
+
+If any of that becomes worth changing, the change is in `PROTOCOL.md`, not in
+the dictionaries.
 
 **APDU names and EMV structures.** `PDOL`, `AFL`, `DOL`, `TLV`, `SFI`,
 `S(WTX)`, `APDU` stay as they are in every language. Anyone working with them
