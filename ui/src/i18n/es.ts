@@ -47,6 +47,8 @@ const esChrome: Record<MessageKey, string> = {
   "topbar.console.title": "Mostrar u ocultar la consola",
   "topbar.inspector.title": "Mostrar u ocultar el inspector",
   "topbar.runtime.title": "Dónde se ejecutaría el grafo realmente",
+  "runtime.confirmRemote":
+    "Este enlace apunta el editor a un runtime en {host}, que no es esta máquina.\n\nLo que haya ahí recibe todos los grafos que ejecutes —con los lectores y ficheros que nombran— y puede escribir en tu consola.\n\n¿Usarlo?",
   "topbar.run.blocked": "Corrige primero los errores de la lista de comprobaciones",
   "topbar.run.ready": "Reservar los dispositivos y empezar",
   "topbar.theme.toLight": "Cambiar al modo claro",

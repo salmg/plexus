@@ -26,6 +26,8 @@ export const en = {
   "topbar.console.title": "Show or hide the console",
   "topbar.inspector.title": "Show or hide the inspector",
   "topbar.runtime.title": "Where the graph would actually run",
+  "runtime.confirmRemote":
+    "This link points the editor at a runtime on {host}, which is not this machine.\n\nWhatever is there receives every graph you run — the readers and files it names — and can write into your console.\n\nUse it?",
   "topbar.run.blocked": "Fix the errors in the checks list first",
   "topbar.run.ready": "Bind devices and start",
   "topbar.theme.toLight": "Switch to light mode",

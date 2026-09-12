@@ -20,6 +20,7 @@ import type {
   PlexusGraph,
   RunState,
 } from "../graph/types";
+import { t } from "../i18n";
 import { MockRuntime } from "../runtime/mock";
 import { WebSocketRuntime } from "../runtime/ws";
 import type { ConsoleResult, Runtime } from "../runtime/transport";
@@ -33,11 +34,52 @@ import { useGraph } from "./useGraph";
  * `?runtime=ws://rig.local:8900/ws`, or bake it in with VITE_PLEXUS_RUNTIME.
  * The top bar always shows which of the two is answering, so a simulated result
  * is never mistaken for a card.
+ *
+ * **A runtime URL in the address bar is a link somebody could have sent you.**
+ * Whatever is on the other end receives every graph you press Run on — which
+ * names your readers and your files — and writes lines into your console. This
+ * project already treats a `.plexus.yaml` as untrusted input and shows a sheet
+ * before opening one; a link that chooses the runtime deserves the same care,
+ * and it accepted anything at all.
+ *
+ * Loopback is the documented case and is dialled without ceremony. Anything
+ * else from the query string is asked about once, and declining leaves you on
+ * the simulator. `VITE_PLEXUS_RUNTIME` is not asked about: it was baked in by
+ * whoever built this copy, which is a decision already made.
  */
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host.endsWith(".localhost")
+  );
+}
+
 function chooseRuntime(): Runtime {
   const fromQuery = new URLSearchParams(window.location.search).get("runtime");
-  const url = fromQuery ?? import.meta.env.VITE_PLEXUS_RUNTIME;
-  return url ? new WebSocketRuntime(url) : new MockRuntime();
+  const raw = fromQuery ?? import.meta.env.VITE_PLEXUS_RUNTIME;
+  if (!raw) return new MockRuntime();
+
+  let url: URL;
+  try {
+    url = new URL(raw, window.location.href);
+  } catch {
+    return new MockRuntime();
+  }
+  // Not a WebSocket URL at all — `javascript:`, `http:`, anything.
+  if (url.protocol !== "ws:" && url.protocol !== "wss:") return new MockRuntime();
+
+  if (
+    fromQuery &&
+    !isLoopbackHost(url.hostname) &&
+    !window.confirm(t("runtime.confirmRemote", { host: url.host }))
+  ) {
+    return new MockRuntime();
+  }
+
+  return new WebSocketRuntime(url.toString());
 }
 
 const APDU_LIMIT = 600;

@@ -22,7 +22,7 @@ from frames import collect
 
 from plexus.api import console
 from plexus.api import server as server_module
-from plexus.api.server import MAX_FRAME_BYTES, create_app, origin_ok
+from plexus.api.server import MAX_FRAME_BYTES, create_app, is_loopback, origin_ok
 from plexus.nodes.card import build as build_card
 from plexus.nodes.paths import PathRefused, resolve_read, resolve_write, workspace
 from plexus.nodes.transform import MAX_APDU_BYTES, TransformError
@@ -476,3 +476,31 @@ def test_a_token_in_the_url_is_kept_out_of_the_access_log():
     )
     redact.filter(plain)
     assert "other-secret" not in plain.getMessage()
+
+
+def test_a_host_name_is_case_insensitive():
+    """
+    `--host LOCALHOST` refused to start, telling the operator they were binding
+    beyond loopback when they were not. A hostname is case-insensitive; this
+    check was not.
+    """
+    for spelling in ("localhost", "LOCALHOST", "LocalHost", "dev.localhost"):
+        assert is_loopback(spelling), spelling
+    assert is_loopback("127.0.0.1")
+    assert is_loopback("::1")
+    assert is_loopback("[::1]")
+    assert not is_loopback("evil.example.com")
+
+    # And the bind guard follows, which is the part that refused.
+    server_module.guard_bind("LOCALHOST")  # does not raise
+
+
+def test_health_is_behind_the_same_host_check_as_the_socket():
+    """
+    It had no check at all, so a page on any origin could read which nodes this
+    build can bind and whether a token is set.
+    """
+    with TestClient(create_app()) as client:
+        assert client.get("/api/health").status_code == 200
+        refused = client.get("/api/health", headers={"host": "evil.example.com"})
+        assert refused.status_code == 403

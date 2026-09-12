@@ -42,7 +42,7 @@ import secrets
 from contextlib import asynccontextmanager
 from typing import Optional, Set
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from plexus.api.session import PROTOCOL_VERSION, ProtocolMismatch, Runtime, Session
@@ -62,10 +62,18 @@ MAX_FRAME_BYTES = 1_000_000
 
 
 def is_loopback(host: str) -> bool:
-    if host in ("localhost",):
+    """
+    Is this a name or address for this machine?
+
+    Case-folded, because a hostname is case-insensitive and this was not:
+    `plexus serve --host LOCALHOST` refused to start, telling the operator
+    they were binding beyond loopback when they were not.
+    """
+    host = (host or "").strip().lower()
+    if host == "localhost" or host.endswith(".localhost"):
         return True
     try:
-        return ipaddress.ip_address(host).is_loopback
+        return ipaddress.ip_address(host.strip("[]")).is_loopback
     except ValueError:
         return False
 
@@ -197,8 +205,19 @@ def create_app() -> FastAPI:
     app.state.runtime = runtime
 
     @app.get("/api/health")
-    async def health() -> JSONResponse:
-        """Enough to tell a runtime is there and what it can bind."""
+    async def health(request: Request) -> JSONResponse:
+        """
+        Enough to tell a runtime is there and what it can bind.
+
+        Behind the same Host check as the socket. It had none at all, so a
+        page on any origin could read which nodes this build can bind and
+        whether a token is set — a map of the machine, handed out for the
+        asking. The answer stays open to anything that passes that check,
+        because the editor reads it before it has a token to offer and
+        because "is a runtime there" is the question it exists to answer.
+        """
+        if not host_ok(request.headers.get("host")):
+            return JSONResponse({"error": "refused"}, status_code=403)
         return JSONResponse(
             {
                 "protocol": PROTOCOL_VERSION,
