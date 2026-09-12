@@ -199,7 +199,7 @@ runtime is one way to read it, and neither owns it.
 
 ## What to read next
 
-- **[The node reference](nodes.md)** — the other twelve nodes.
+- **[The node reference](nodes.md)** — every node, and every field on it.
 - **[Running on hardware](hardware.md)** — when you want a real card.
 - **[What it refuses](security.md)** — why Open asks before it loads, and what
   the workspace is.

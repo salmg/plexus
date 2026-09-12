@@ -2,7 +2,9 @@
 
 Dos mitades, y con la primera ya llegas a algún sitio.
 
-- **El editor** necesita Node 20 o posterior. Nada más: ni lector, ni Python.
+- **El editor** necesita **Node 22.12 o posterior**. Con 20.19+ funciona
+  todo menos `npm run export:catalogue`, que importa TypeScript
+  directamente y quiere 22.18. Nada más: ni lector, ni Python.
 - **El runtime** necesita Python 3.8 o posterior, y sólo cuando quieras armar
   un grafo de verdad.
 
@@ -95,7 +97,7 @@ niegan al armarlo, diciendo qué les falta.
 
 > La CLI y el runtime hablan **en inglés**. Lo que dicen llega ya escrito por el
 > socket, y traducir media traza sería peor que dejarla entera en un idioma.
-> Ver [Idiomas](../languages.md).
+> Ver [Idiomas](../languages.md) (en inglés).
 
 Ahora ejecuta un montaje que no necesita nada:
 
@@ -110,6 +112,8 @@ info  Armed 3 nodes: probe-1 -> mutation-1 -> capture-1
     ...
     34.3 <- 70145A0854133300123456785F24032512315F3401019000  0.0 ms
     34.4 <- 70145A0854133300123456785F24032512315F3401079000  rewritten by mutation-1
+
+4 exchanges, 0 errors.
 ```
 
 Esas dos últimas líneas son lo importante: lo que dijo la tarjeta y lo que le

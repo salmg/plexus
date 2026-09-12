@@ -313,6 +313,7 @@ is no per-node React component.
 ```bash
 cd ui
 npm run export:catalogue     # regenerates plexus/schema/catalogue.json
+                             # (needs Node 22.18+: it imports the .ts)
 ```
 
 Both sides read that JSON, so the description exists once. Then write the

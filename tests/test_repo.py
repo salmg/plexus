@@ -232,3 +232,79 @@ def test_every_screenshot_that_is_generated_is_also_shown(tracked_paths):
         if name.startswith("docs/images/") and name.split("/")[-1] not in shown
     ]
     assert not orphans, "generated, tracked, and shown nowhere:\n" + "\n".join(orphans)
+
+
+# ── The two translated pages ────────────────────────────────────────────────
+#
+# Prose is allowed to differ; that is what a translation is. Facts are not.
+# Every one of these caught something real: `docs/install.md` was corrected from
+# "Node 20 or newer" to the floor vite and oxlint actually declare, and
+# `docs/es/install.md` went on saying "Node 20 o posterior"; the same page's
+# sample output lost a line; the first-run guide gained a screenshot in one
+# language only.
+
+TRANSLATED = [("install.md", "es/install.md"), ("first-run.md", "es/first-run.md")]
+
+
+def page(name: str) -> str:
+    return (REPO / "docs" / name).read_text(encoding="utf-8")
+
+
+def fenced_blocks(text: str) -> list[str]:
+    """
+    Every ``` block, with comments removed.
+
+    A command's comment is prose and gets translated — `# one terminal` becomes
+    `# en un terminal`. The command either side of it must not.
+    """
+    out = []
+    for block in re.findall(r"```[a-z]*\n(.*?)```", text, re.S):
+        lines = [re.sub(r"\s*#.*$", "", line).rstrip() for line in block.splitlines()]
+        out.append("\n".join(line for line in lines if line))
+    return out
+
+
+def version_claims(text: str) -> set[str]:
+    """
+    Every version-shaped figure on the page.
+
+    Anything with a dot between digits: `22.12`, `20.19+`, `3.8`, `127.0.0.1`,
+    and the millisecond stamps in sample output. Deliberately broader than
+    "numbers after the word Node" — the claim that rotted was `Node 20`, but
+    `22.18` appears in a sentence with no product name in front of it, and a
+    reader is no less misled by a wrong one of those.
+    """
+    return set(re.findall(r"(?<![\d.])\d+\.\d+(?:\.\d+)*\+?(?!\d)", text))
+
+
+@pytest.mark.parametrize("english,spanish", TRANSLATED)
+def test_a_translated_page_claims_the_same_versions(english, spanish):
+    assert version_claims(page(english)) == version_claims(page(spanish))
+
+
+@pytest.mark.parametrize("english,spanish", TRANSLATED)
+def test_a_translated_page_gives_the_same_commands(english, spanish):
+    assert fenced_blocks(page(english)) == fenced_blocks(page(spanish))
+
+
+@pytest.mark.parametrize("english,spanish", TRANSLATED)
+def test_a_translated_page_has_the_same_sections(english, spanish):
+    def headings(text: str) -> int:
+        return len(re.findall(r"^#{1,3} ", text, re.M))
+
+    assert headings(page(english)) == headings(page(spanish))
+
+
+def test_the_manual_says_which_pages_are_translated():
+    """
+    `docs/languages.md` names the Spanish pages by hand. A third one added
+    without touching that paragraph would be a page nobody could find.
+    """
+    translated = {p.name for p in (REPO / "docs" / "es").glob("*.md")}
+    claim = page("languages.md")
+
+    for name in translated:
+        assert "es/%s" % name in claim, "languages.md never mentions es/%s" % name
+    assert translated == {spanish.split("/")[-1] for _, spanish in TRANSLATED}, (
+        "a page was translated without being added to TRANSLATED above"
+    )

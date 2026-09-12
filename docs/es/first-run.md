@@ -87,6 +87,8 @@ la secuencia que manda la sonda.
 El panel de comprobaciones debería decir ya **Nada que corregir. Este grafo se
 puede armar.**
 
+![Un montaje que sí se puede ejecutar, sin hardware](../images/07-runnable-rig.png)
+
 ## 5. Ejecútalo
 
 Pulsa **Ejecutar**.
@@ -200,7 +202,10 @@ runtime una de leerlo, y ninguno de los dos es su dueño.
 
 ## Qué leer después
 
-- **[The node reference](../nodes.md)** — los otros trece nodos.
+Estas tres páginas están **en inglés**: sólo esta guía y la instalación
+están traducidas. Ver [Idiomas](../languages.md) (en inglés) para el porqué.
+
+- **[The node reference](../nodes.md)** — cada nodo, y cada campo suyo.
 - **[Running on hardware](../hardware.md)** — cuando quieras una tarjeta de
   verdad.
 - **[What it refuses](../security.md)** — por qué Abrir pregunta antes de
