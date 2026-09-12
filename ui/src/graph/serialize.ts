@@ -49,21 +49,49 @@ const HEADER = `# Plexus graph.
 # asks to the side that answers, which is the direction a command APDU travels.
 # Responses come back along the same edge.`;
 
-export class GraphParseError extends Error {}
+/**
+ * A file this build will not read, and why.
+ *
+ * Carries a message key rather than a sentence. The `message` is still English
+ * and still useful in a console or a stack trace, but the one place a person
+ * actually meets one of these — the alert when they open a `.plexus.yaml`
+ * somebody sent them — is the last place an untranslated string belongs, and
+ * for a while it was the only untranslated string the interface had.
+ *
+ * `plexus/graph.py` raises the same conditions with the same wording; keeping
+ * the English here is what makes the two comparable.
+ */
+export class GraphParseError extends Error {
+  readonly key: string;
+  readonly vars: Record<string, string | number>;
+
+  constructor(key: string, vars: Record<string, string | number>, english: string) {
+    super(english);
+    this.key = key;
+    this.vars = vars;
+  }
+}
 
 export function fromYaml(text: string): PlexusGraph {
   let raw: unknown;
   try {
     raw = load(text);
   } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
     throw new GraphParseError(
-      `Not valid YAML: ${err instanceof Error ? err.message : String(err)}`,
+      "parse.notYaml",
+      { detail },
+      `Not valid YAML: ${detail}`,
     );
   }
 
-  if (!isRecord(raw)) throw new GraphParseError("The file is empty.");
+  if (!isRecord(raw)) {
+    throw new GraphParseError("parse.empty", {}, "The file is empty.");
+  }
   if (raw.version !== 1) {
     throw new GraphParseError(
+      "parse.version",
+      { version: String(raw.version) },
       `Unsupported graph version ${String(raw.version)}. This build reads version 1.`,
     );
   }
@@ -81,19 +109,35 @@ export function fromYaml(text: string): PlexusGraph {
 }
 
 function parseNodes(value: unknown): PlexusNode[] {
-  if (!Array.isArray(value)) throw new GraphParseError("`nodes` must be a list.");
+  if (!Array.isArray(value)) {
+    throw new GraphParseError("parse.nodesList", {}, "`nodes` must be a list.");
+  }
 
   const seen = new Set<string>();
   return value.map((entry, i) => {
-    if (!isRecord(entry)) throw new GraphParseError(`Node ${i} is not a mapping.`);
+    if (!isRecord(entry)) {
+      throw new GraphParseError(
+        "parse.nodeMapping",
+        { index: i },
+        `Node ${i} is not a mapping.`,
+      );
+    }
 
     const id = requireString(entry.id, `nodes[${i}].id`);
-    if (seen.has(id)) throw new GraphParseError(`Two nodes share the id "${id}".`);
+    if (seen.has(id)) {
+      throw new GraphParseError(
+        "parse.duplicateId",
+        { id },
+        `Two nodes share the id "${id}".`,
+      );
+    }
     seen.add(id);
 
     const type = requireString(entry.type, `nodes[${i}].type`);
     if (!nodeType(type)) {
       throw new GraphParseError(
+        "parse.unknownType",
+        { id, type },
         `Node "${id}" has type "${type}", which this build does not know.`,
       );
     }
@@ -118,10 +162,18 @@ function parseNodes(value: unknown): PlexusNode[] {
 
 function parseEdges(value: unknown, known: Set<string>): PlexusEdge[] {
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw new GraphParseError("`edges` must be a list.");
+  if (!Array.isArray(value)) {
+    throw new GraphParseError("parse.edgesList", {}, "`edges` must be a list.");
+  }
 
   return value.map((entry, i) => {
-    if (!isRecord(entry)) throw new GraphParseError(`Edge ${i} is not a mapping.`);
+    if (!isRecord(entry)) {
+      throw new GraphParseError(
+        "parse.edgeMapping",
+        { index: i },
+        `Edge ${i} is not a mapping.`,
+      );
+    }
     const from = parseRef(entry.from, `edges[${i}].from`, known);
     const to = parseRef(entry.to, `edges[${i}].to`, known);
     const id =
@@ -136,11 +188,19 @@ function parseRef(value: unknown, where: string, known: Set<string>) {
   const text = requireString(value, where);
   const at = text.lastIndexOf(":");
   if (at <= 0 || at === text.length - 1) {
-    throw new GraphParseError(`${where} should read "node:port", got "${text}".`);
+    throw new GraphParseError(
+      "parse.portRef",
+      { where, text },
+      `${where} should read "node:port", got "${text}".`,
+    );
   }
   const node = text.slice(0, at);
   if (!known.has(node)) {
-    throw new GraphParseError(`${where} names node "${node}", which is not defined.`);
+    throw new GraphParseError(
+      "parse.unknownNode",
+      { where, node },
+      `${where} names node "${node}", which is not defined.`,
+    );
   }
   return { node, port: text.slice(at + 1) };
 }
@@ -161,7 +221,11 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function requireString(v: unknown, where: string): string {
   if (typeof v !== "string" || v === "") {
-    throw new GraphParseError(`${where} must be a non-empty string.`);
+    throw new GraphParseError(
+      "parse.requireString",
+      { where },
+      `${where} must be a non-empty string.`,
+    );
   }
   return v;
 }

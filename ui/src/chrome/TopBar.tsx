@@ -82,9 +82,12 @@ export function TopBar({
     try {
       setPending({ graph: fromYaml(await file.text()), filename: file.name });
     } catch (err) {
+      // Translated. A refused file is the one error a person meets while
+      // simply opening something somebody sent them, and it was the only
+      // untranslated string the interface had.
       const message =
         err instanceof GraphParseError
-          ? err.message
+          ? t(err.key, err.vars)
           : t("topbar.unreadable", {
               message: err instanceof Error ? err.message : String(err),
             });

@@ -35,7 +35,9 @@ export const LOCALE_NAMES: Record<Locale, string> = {
 };
 
 /** Every key the chrome uses. Catalogue keys are looser — see `catalogueText`. */
-export type MessageKey = keyof typeof en;
+import type { MessageKey } from "./en";
+
+export type { MessageKey };
 
 export type Vars = Record<string, string | number>;
 
@@ -152,4 +154,24 @@ export function useLocale(): [Locale, (locale: Locale) => void] {
   const current = useLocaleStore((s) => s.locale);
   const setLocale = useLocaleStore((s) => s.setLocale);
   return [current, setLocale];
+}
+
+/**
+ * "A and B" in the reader's language.
+ *
+ * `join(" and ")` put an English word inside a translated sentence. Spanish
+ * needs "y", and needs "e" before a word starting with i- or hi- — which
+ * `Intl.ListFormat` knows and a lookup table would get wrong.
+ */
+export function andList(items: string[]): string {
+  try {
+    return new Intl.ListFormat(locale(), {
+      style: "long",
+      type: "conjunction",
+    }).format(items);
+  } catch {
+    // A runtime without Intl.ListFormat. Rare, and not worth failing a check
+    // over.
+    return items.join(", ");
+  }
 }

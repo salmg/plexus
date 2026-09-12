@@ -19,7 +19,19 @@
  * sólo la mitad de una traza sería peor que dejarla entera en un idioma.
  */
 
-export const es: Record<string, string> = {
+import type { MessageKey } from "./en";
+
+/**
+ * The chrome, in Spanish.
+ *
+ * `Record<MessageKey, string>` and not `Partial<…>`: every key en.ts has must
+ * be here. This was `Record<string, string>`, which checked nothing at all — a
+ * typo'd key was a silently new key nothing would ever read, and an English
+ * key added without a translation was a Spanish interface with an English
+ * sentence in it. Both are compile errors now. All 128 were already
+ * translated, so the strict form costs nothing today and keeps it that way.
+ */
+const esChrome: Record<MessageKey, string> = {
   // ── Barra superior ───────────────────────────────────────────────────
   "app.tagline": "lienzo de nodos para atrium",
   "app.by": "Diseñado y facilitado por academy.salmg.net",
@@ -186,6 +198,37 @@ export const es: Record<string, string> = {
   "connect.alreadyWired": "El puerto {port} de {node} ya está conectado.",
   "connect.loop": "Eso cerraría un bucle.",
 
+  // ── Al abrir un archivo que esta versión no lee ──────────────────────
+  "parse.notYaml": "No es YAML válido: {detail}",
+  "parse.empty": "El archivo está vacío.",
+  "parse.version":
+    "Versión de grafo no admitida: {version}. Esta versión lee la 1.",
+  "parse.nodesList": "`nodes` tiene que ser una lista.",
+  "parse.edgesList": "`edges` tiene que ser una lista.",
+  "parse.nodeMapping": "El nodo {index} no es un mapa.",
+  "parse.edgeMapping": "La arista {index} no es un mapa.",
+  "parse.duplicateId": 'Dos nodos comparten el id "{id}".',
+  "parse.unknownType":
+    'El nodo "{id}" es de tipo "{type}", que esta versión no conoce.',
+  "parse.portRef": '{where} tiene que decir "nodo:puerto"; dice "{text}".',
+  "parse.unknownNode": '{where} nombra el nodo "{node}", que no está definido.',
+  "parse.requireString": "{where} tiene que ser una cadena no vacía.",
+};
+
+/**
+ * Catalogue text: node titles, summaries, caveats, field labels, port names.
+ *
+ * Separate from the chrome above because it cannot be typed the same way.
+ * These keys are built at run time from node and field ids — `port.${port.id}`,
+ * `node.${key}.title` — so there is no English object to check them against;
+ * en.ts deliberately holds none of them, because the English already lives in
+ * the catalogue that Python reads too.
+ *
+ * The split is the point: everything above this line is checked against
+ * `MessageKey`, which is what turns a typo into a compile error instead of a
+ * key nothing ever reads.
+ */
+const esCatalogue: Record<string, string> = {
   // ── Puertos ──────────────────────────────────────────────────────────
   "port.card": "tarjeta",
   "port.terminal": "terminal",
@@ -330,3 +373,6 @@ export const es: Record<string, string> = {
   "field.breakpoint.matchIns.placeholder": "vacío para todos los comandos",
   "field.breakpoint.editable.label": "Permitir editar los bytes retenidos",
 };
+
+/** Both halves, as one lookup. */
+export const es: Record<string, string> = { ...esChrome, ...esCatalogue };

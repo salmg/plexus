@@ -173,4 +173,34 @@ export const en = {
     "Both ports answer. An edge joins one that asks to one that answers.",
   "connect.alreadyWired": "The {port} port on {node} is already wired.",
   "connect.loop": "That would close a loop.",
+
+  // ── Opening a file this build will not read ──────────────────────────
+  //
+  // The English here is the same wording `plexus/graph.py` raises, so a file
+  // refused by the editor and the same file refused by `plexus check` say the
+  // same thing.
+  "parse.notYaml": "Not valid YAML: {detail}",
+  "parse.empty": "The file is empty.",
+  "parse.version":
+    "Unsupported graph version {version}. This build reads version 1.",
+  "parse.nodesList": "`nodes` must be a list.",
+  "parse.edgesList": "`edges` must be a list.",
+  "parse.nodeMapping": "Node {index} is not a mapping.",
+  "parse.edgeMapping": "Edge {index} is not a mapping.",
+  "parse.duplicateId": 'Two nodes share the id "{id}".',
+  "parse.unknownType":
+    'Node "{id}" has type "{type}", which this build does not know.',
+  "parse.portRef": '{where} should read "node:port", got "{text}".',
+  "parse.unknownNode": '{where} names node "{node}", which is not defined.',
+  "parse.requireString": "{where} must be a non-empty string.",
 } as const;
+
+/**
+ * Every key the chrome uses.
+ *
+ * Declared here rather than in `index.ts` so a translation can import it
+ * without a cycle — which is the whole point of it existing: `es.ts` was typed
+ * `Record<string, string>`, so a typo'd key was a silently new key that nothing
+ * would ever read, and neither the type system nor a test could tell.
+ */
+export type MessageKey = keyof typeof en;

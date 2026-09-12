@@ -14,7 +14,7 @@
 
 import { nodeType } from "../catalogue";
 import { nodeTitle, portLabel } from "../i18n/catalogue";
-import { t } from "../i18n";
+import { andList, t } from "../i18n";
 import type { PortSpec } from "./types";
 import type { Device, PlexusEdge, PlexusGraph, PlexusNode, PortRef } from "./types";
 
@@ -505,7 +505,7 @@ function problemsFromDevices(
     }
 
     if (holders.length > 1) {
-      const names = holders.map(nodeLabel).join(" and ");
+      const names = andList(holders.map(nodeLabel));
       out.push({
         code: "device-contended",
         level: "error",
