@@ -160,6 +160,8 @@ export const es: Record<string, string> = {
     "Estos nodos forman un bucle: {nodes}. Una conversación tiene que acabar en algún sitio.",
   "check.unwiredRequester":
     "{node} no tiene nada en su puerto {port}. Conéctalo a algo que responda.",
+  "check.unwiredOob":
+    "{node} no tiene nada en su puerto {port}, así que dejará pasar el tráfico sin inyectar nada.",
   "check.unwiredResponder": "Nadie le pregunta nada a {node}. Se quedará inactivo.",
   "check.unboundDevice": "{node} no tiene ningún dispositivo seleccionado.",
   "check.deviceMissing": "{name} no está presente. Conéctalo o elige otro.",

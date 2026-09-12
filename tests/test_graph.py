@@ -683,3 +683,83 @@ def test_hosts_is_the_one_field_that_is_shrugged_at():
 
 def test_a_graph_named_something_that_is_not_a_string_is_untitled():
     assert Graph.from_yaml("version: 1\nname: 5\nnodes: []\n").name == "untitled"
+
+
+def test_a_dashed_edge_may_land_on_a_card_that_is_already_in_a_chain():
+    """
+    The one-conversation rule applied to both ends of every edge, so an inject
+    node could not be wired at all: draw the chain and the dashed edge is
+    refused, draw the dashed edge and the chain is refused. An out-of-band edge
+    lands on a card already in a chain *by definition* — that is what "past
+    everything downstream" means.
+
+    `canConnect` in ui/src/graph/validate.ts carries the same exemption.
+    """
+    graph = build(
+        """
+        version: 1
+        name: injected
+        nodes:
+          - id: t
+            type: acr122u.target
+            at: [0, 0]
+            config: {device: acr122u:001}
+          - id: i
+            type: inject
+            at: [200, 0]
+            config: {triggerIns: "AE", apdu: "80CA9F1700"}
+          - id: c
+            type: capture
+            at: [400, 0]
+            config: {path: logs/x.jsonl}
+        edges:
+          - from: t:card
+            to: i:terminal
+          - from: i:card
+            to: c:terminal
+          - from: i:oob
+            to: c:terminal
+        """
+    )
+    assert "port-contended" not in [p.code for p in validate(graph)]
+    assert "unwired-oob" not in [p.code for p in validate(graph)]
+
+
+def test_one_dashed_line_per_node_is_still_the_rule():
+    """The exemption is for the card end, not for the out-of-band port itself:
+    that port carries one conversation like any other."""
+    graph = build(
+        """
+        version: 1
+        name: two dashed lines
+        nodes:
+          - id: t
+            type: acr122u.target
+            at: [0, 0]
+            config: {device: acr122u:001}
+          - id: i
+            type: inject
+            at: [200, 0]
+            config: {triggerIns: "AE", apdu: "80CA9F1700"}
+          - id: c
+            type: capture
+            at: [400, 0]
+            config: {path: logs/x.jsonl}
+          - id: d
+            type: capture
+            at: [400, 200]
+            config: {path: logs/y.jsonl}
+        edges:
+          - from: t:card
+            to: i:terminal
+          - from: i:card
+            to: c:terminal
+          - from: i:oob
+            to: c:terminal
+          - from: i:oob
+            to: d:terminal
+        """
+    )
+    contended = [p for p in validate(graph) if p.code == "port-contended"]
+    assert contended, "an out-of-band port wired twice is still two conversations"
+    assert "out of band" in contended[0].message

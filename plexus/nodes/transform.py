@@ -13,7 +13,7 @@ import logging
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 import yaml
 
@@ -211,7 +211,12 @@ class Inject(PassThrough):
         self.repeat = repeat
         self._execute = card_execute
         self.fired = 0
-        self.results: List[bytes] = []
+        self.skipped = 0
+        #: What the card last said to an injected command. One, not all of
+        #: them: `results` held every response for the life of the run and
+        #: nothing ever read it, which on a long relay is an unbounded field
+        #: full of bytes nobody asked for.
+        self.last_response: Optional[bytes] = None
         self._spent = False
 
     def on_command(self, apdu: bytes) -> bytes:
@@ -232,12 +237,14 @@ class Inject(PassThrough):
     def _fire(self) -> None:
         self._spent = True
         if self._execute is None:
-            # No card bound yet. Count it so the miss is visible rather than
-            # looking like the trigger never matched.
+            # No out-of-band line to the card. Counted so the miss is visible
+            # rather than looking like the trigger never matched — which is
+            # what the comment here claimed while the code returned first.
+            self.skipped += 1
             log.warning("injection has no out-of-band line to the card; skipped")
             return
         self.fired += 1
-        self.results.append(self._execute(self.payload))
+        self.last_response = self._execute(self.payload)
 
 
 class Swtx(PassThrough):

@@ -39,7 +39,7 @@ from plexus.runtime.events import (
     RollingMean,
     Sink,
 )
-from plexus.runtime.ports import Chain
+from plexus.runtime.ports import Chain, as_bytes
 
 log = logging.getLogger(__name__)
 
@@ -229,17 +229,42 @@ class Engine:
         self._card.connect()
         self._mark(tail.id, status="ready")
 
-        def card_execute(apdu: bytes) -> bytes:
-            """The dashed edge: straight to the card, past everything else."""
-            self._mark_oob(tail.id)
-            return self._card.transmit(apdu)
+        # The dashed line. Only `inject` has an out-of-band port, and
+        # `card_execute` used to be handed to every transform regardless of
+        # whether one was drawn — so an inject node with no dashed edge
+        # injected anyway, and one whose dashed edge pointed elsewhere injected
+        # into the card all the same. The edge is what authorises it now.
+        oob_by_node: Dict[str, str] = {}
+        for node in middle:
+            edge = next(
+                (
+                    e
+                    for e in self.graph.edges
+                    if e.source.node == node.id and e.source.port == "oob"
+                ),
+                None,
+            )
+            if edge is None:
+                continue
+            if edge.target.node != tail.id:
+                raise EngineError(
+                    "%s's out-of-band line goes to %s, but the card in this "
+                    "chain is %s. Draw it to the card, or remove it."
+                    % (node.id, edge.target.node, tail.id)
+                )
+            oob_by_node[node.id] = edge.id
 
         self._transforms = []
         self._transform_ids = []
         self._transform_by_id = {}
         for node in middle:
+            oob_edge = oob_by_node.get(node.id)
             built = transform_nodes.build(
-                node.type, node.config, card_execute=card_execute
+                node.type,
+                node.config,
+                card_execute=(
+                    self._oob_line(node.id, oob_edge) if oob_edge else None
+                ),
             )
             # A breakpoint that catches a command blocks the chain, so it has to
             # be able to say so. Set by attribute rather than by constructor
@@ -512,6 +537,72 @@ class Engine:
             setattr(telemetry, key, value)
         self.sink.node(node_id, telemetry)
 
+    def _oob_line(self, node_id: str, edge_id: str) -> Callable[[bytes], bytes]:
+        """
+        The dashed edge: straight to the card, past every other transform.
+
+        Reported like any other exchange, because it was not reported at all.
+        No APDU event was emitted and the dashed edge's own telemetry stayed at
+        zero for the life of the run, so an injection that reached the card
+        looked exactly like one that never happened — on a node whose entire
+        purpose is to send a command the terminal did not ask for.
+        """
+
+        def execute(apdu: bytes) -> bytes:
+            card = self._card
+            if card is None:
+                raise EngineError("Nothing is bound.")
+
+            started = self.clock.ms()
+            self.sink.apdu(
+                ApduEvent(
+                    self._next_seq(),
+                    started,
+                    edge_id,
+                    "command",
+                    apdu.hex().upper(),
+                    mutated_by=node_id,
+                    note="out of band",
+                )
+            )
+            response = as_bytes(card.transmit(apdu))
+            elapsed = self.clock.ms() - started
+            self.sink.apdu(
+                ApduEvent(
+                    self._next_seq(),
+                    started + elapsed,
+                    edge_id,
+                    "response",
+                    response.hex().upper(),
+                    ms=elapsed,
+                    mutated_by=node_id,
+                    note="out of band",
+                )
+            )
+
+            # Both ends of the dashed edge: the node that sent it and the card
+            # that answered.
+            self._mark_oob(node_id)
+            if self._node_ids:
+                self._mark_oob(self._node_ids[-1])
+
+            edge = self._edges.setdefault(edge_id, EdgeTelemetry())
+            edge.apdus += 1
+            edge.last_ms = elapsed
+            edge.bytes_out += len(apdu)
+            edge.bytes_in += len(response)
+            self.sink.edge(edge_id, edge)
+
+            # The count, on the node card. `fired` was incremented and read by
+            # nobody, so the one thing an inject node does left no mark on the
+            # interface at all.
+            fired = getattr(self._transform_by_id.get(node_id), "fired", None)
+            if isinstance(fired, int):
+                self._mark(node_id, detail="injected %d" % fired)
+            return response
+
+        return execute
+
     def _mark_oob(self, node_id: str) -> None:
         telemetry = self._telemetry.setdefault(node_id, NodeTelemetry())
         telemetry.apdus += 1
@@ -622,10 +713,30 @@ class _Observer:
 
     def rewrote(self, node_id: str, phase: str, before: bytes, after: bytes) -> None:
         engine = self._engine
-        # Attributed to the edge the rewritten bytes leave on: a command goes
-        # on downstream, a response goes back up.
-        edges = engine._edge_ids or ["chain"]
-        edge_id = edges[-1] if phase == "command" else edges[0]
+
+        # Attributed to the edge the rewritten bytes actually leave on.
+        #
+        # `_edge_ids[i]` is the edge leaving `_node_ids[i]`. A command goes on
+        # downstream, so it leaves on that one; a response goes back upstream,
+        # so it leaves on the edge this node was reached by, `_edge_ids[i - 1]`.
+        #
+        # This used to take the ends of the list — last for a command, first
+        # for a response — which is correct for a chain with one transform,
+        # because there the edge out of that node *is* the edge into the card.
+        # With two, every rewrite by the first transform was drawn at the card.
+        edges = engine._edge_ids
+        try:
+            index = engine._node_ids.index(node_id)
+        except ValueError:
+            index = -1
+
+        if not edges or index < 0:
+            edge_id = "chain"
+        elif phase == "command":
+            edge_id = edges[min(index, len(edges) - 1)]
+        else:
+            edge_id = edges[max(index - 1, 0)]
+
         engine.sink.apdu(
             ApduEvent(
                 engine._next_seq(),

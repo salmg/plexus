@@ -158,7 +158,15 @@ def _run(graph: Graph, quiet: bool = False, timeout: float = 120.0) -> int:
                 if event.get("ms") is not None:
                     tail += "  %.1f ms" % event["ms"]
                 if event.get("mutatedBy"):
-                    tail += "  rewritten by %s" % event["mutatedBy"]
+                    # An injection is not a rewrite: the same field carries
+                    # "which node is responsible", and the note says which
+                    # kind of responsible it is.
+                    verb = (
+                        "injected by"
+                        if event.get("note") == "out of band"
+                        else "rewritten by"
+                    )
+                    tail += "  %s %s" % (verb, event["mutatedBy"])
                 print("%8.1f %s %s%s" % (event["t"], arrow, event["hex"], tail))
 
     engine = Engine(sink=Printing())

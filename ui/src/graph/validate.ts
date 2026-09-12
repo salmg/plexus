@@ -119,7 +119,18 @@ export function canConnect(
 
   // Each port carries exactly one conversation.  Fanning a card out to two
   // terminals is not a graph Plexus can run — it is two graphs.
-  for (const ref of [from, to]) {
+  //
+  // The dashed line is the exception, and it has to be: an out-of-band edge
+  // lands on the terminal port of a card that is already in a chain, by
+  // definition — that is what "past everything downstream" means. With the
+  // rule applied to both ends, an inject node could not be wired at all. Draw
+  // the chain and the dashed edge was refused; draw the dashed edge and the
+  // chain was refused.
+  //
+  // So the source is checked — one dashed line per node, since that port
+  // carries one conversation like any other — and the target is not.
+  const ends = srcPort.oob ? [from] : [from, to];
+  for (const ref of ends) {
     if (graph.edges.some((e) => edgeTouches(e, ref))) {
       const n = ref.node === from.node ? src : dst;
       const p = ref.node === from.node ? srcPort : dstPort;
@@ -379,6 +390,21 @@ function problemsFromPorts(
           level: "error",
           nodeId: node.id,
           message: t("check.unwiredRequester", {
+            node: nodeLabel(node),
+            port: portLabel(port),
+          }),
+        });
+      } else if (port.role === "requester") {
+        // An out-of-band port with nothing on it is not an error — the node
+        // still passes traffic through — but the one thing it is for cannot
+        // happen. The runtime used to inject anyway, because it handed every
+        // transform a line to the card whether one was drawn or not; the edge
+        // authorises it now, so this says so before Run.
+        out.push({
+          code: "unwired-oob",
+          level: "warning",
+          nodeId: node.id,
+          message: t("check.unwiredOob", {
             node: nodeLabel(node),
             port: portLabel(port),
           }),

@@ -171,13 +171,13 @@ class Chain:
             self._observer.started(apdu)
 
         for node_id, transform in zip(self._transform_ids, self._transforms):
-            rewritten = _as_bytes(transform.on_command(command))
+            rewritten = as_bytes(transform.on_command(command))
             if rewritten != command and self._observer is not None:
                 self._observer.rewrote(node_id, "command", command, rewritten)
             command = rewritten
 
         try:
-            response = _as_bytes(self._card.transmit(command))
+            response = as_bytes(self._card.transmit(command))
         except Exception as exc:
             self.errors += 1
             if self._observer is not None:
@@ -214,7 +214,7 @@ class Chain:
         for node_id, transform in zip(
             reversed(self._transform_ids), reversed(self._transforms)
         ):
-            rewritten = _as_bytes(transform.on_response(command, response))
+            rewritten = as_bytes(transform.on_response(command, response))
             if rewritten != response and self._observer is not None:
                 self._observer.rewrote(node_id, "response", response, rewritten)
             response = rewritten
@@ -249,7 +249,7 @@ class ExchangeObserver(Protocol):
     def failed(self, node_id: str, error: BaseException) -> None: ...
 
 
-def _as_bytes(value) -> bytes:
+def as_bytes(value) -> bytes:
     """
     Atrium's hooks return whatever type they were given, and its relay path
     historically dealt in ``str``.  Plexus deals in bytes everywhere, so the

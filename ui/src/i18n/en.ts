@@ -149,6 +149,8 @@ export const en = {
     "These nodes form a loop: {nodes}. A conversation has to end somewhere.",
   "check.unwiredRequester":
     "{node} has nothing on its {port} port. Wire it to something that answers.",
+  "check.unwiredOob":
+    "{node} has nothing on its {port} port, so it will pass traffic through and inject nothing.",
   "check.unwiredResponder": "Nothing is asking {node} anything. It will sit idle.",
   "check.unboundDevice": "{node} has no device selected.",
   "check.deviceMissing": "{name} is not present. Plug it in, or pick another.",

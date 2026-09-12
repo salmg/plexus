@@ -1,0 +1,53 @@
+# Plexus graph.
+#
+# The dashed edge, which is the whole point of the injection node: `x:oob` goes
+# straight to the card, past everything downstream of x. On the canvas it is
+# drawn rather than hidden, because it spends the round trip twice — free on
+# contact, and enough to time a contactless tap out.
+#
+# Note that `c:terminal` carries two edges. That is the one place a port may:
+# the chain arrives on it, and so does the dashed line. Every other port
+# carries exactly one conversation.
+#
+# This one runs with no hardware — the card is a recorded capture — so it is
+# the rig to open if you want to watch an injection happen:
+#
+#     plexus run examples/inject-out-of-band.plexus.yaml
+#
+# The capture has no answer for 80CA9F1700, so the card replies 6D00. That is
+# the honest answer from a recording, and it is still proof the command
+# arrived.
+version: 1
+name: injection out of band
+
+nodes:
+  - id: p
+    type: probe
+    at: [40, 160]
+    config:
+      depth: standard
+
+  - id: x
+    type: inject
+    label: GET DATA 9F17
+    at: [320, 160]
+    config:
+      triggerIns: "A8"
+      apdu: "80CA9F1700"
+      when: after_response
+      repeat: false
+
+  - id: c
+    type: capture
+    at: [600, 160]
+    config:
+      path: tests/captures/mastercard-probe.jsonl
+      strict: false
+
+edges:
+  - from: p:card
+    to: x:terminal
+  - from: x:card
+    to: c:terminal
+  - from: x:oob
+    to: c:terminal

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from plexus.graph import Graph, PortRef
+from plexus.graph import Graph, PortRef, validate
 from plexus.nodes import terminal as terminal_nodes
 from plexus.nodes.card import CardUnavailable
 from plexus.nodes.terminal import find_all, gpo_for, read_records, tlv_walk
@@ -265,6 +265,66 @@ def test_a_mutation_node_rewrites_and_the_rewrite_is_reported():
     assert all(e.mutated_by == "x" for e in rewrites)
     # The record reached the terminal with the replaced sequence number in it.
     assert any("5F340107" in e.hex for e in rewrites)
+
+
+
+
+def test_a_rewrite_is_drawn_on_the_edge_it_leaves_on():
+    """
+    With one transform, "the edge out of this node" and "the edge into the
+    card" are the same edge, so taking the ends of the list looked right. With
+    two, every rewrite was drawn at one end of the chain or the other — a
+    mutation in the middle appeared to happen somewhere it did not.
+
+    probe -> trace -> mutation -> capture, and the mutation is second on
+    purpose: it rewrites a *response*, which travels back upstream, so it
+    leaves on the edge the mutation node was reached by — `tr->x`. The old
+    rule said `p->tr`, the first edge in the chain, which the mutation node
+    never touches.
+    """
+    from plexus.graph import Edge, Node, PortRef
+
+    log = REPO / "logs" / "test-attribution.jsonl"
+    if log.exists():
+        log.unlink()
+
+    graph = probe_over_capture()
+    graph.nodes.insert(
+        1,
+        Node(
+            id="tr",
+            type="trace",
+            position=(200, 0),
+            config={"detail": "raw", "path": "logs/test-attribution.jsonl"},
+        ),
+    )
+    graph.nodes.insert(
+        2,
+        Node(
+            id="x",
+            type="mutation",
+            position=(300, 0),
+            config={"logMutations": False, "playbook": PLAYBOOK},
+        ),
+    )
+    graph.edges = [
+        Edge("p->tr", PortRef("p", "card"), PortRef("tr", "terminal")),
+        Edge("tr->x", PortRef("tr", "card"), PortRef("x", "terminal")),
+        Edge("x->c", PortRef("x", "card"), PortRef("c", "terminal")),
+    ]
+
+    try:
+        engine = run_to_completion(graph)
+
+        rewrites = [e for e in engine.sink.apdus if e.mutated_by == "x"]
+        assert rewrites, "the mutation node reported no rewrite"
+        assert all(e.direction == "response" for e in rewrites)
+        assert {e.edge for e in rewrites} == {"tr->x"}, (
+            "a response rewritten by x leaves on the edge x was reached by"
+        )
+    finally:
+        if log.exists():
+            log.unlink()
 
 
 # ── Refusing ────────────────────────────────────────────────────────────────
@@ -875,3 +935,143 @@ def test_a_refused_graph_with_nothing_bound_still_faults():
     with pytest.raises(EngineError):
         engine.arm(broken)
     assert engine.state == "faulted"
+
+
+# ── The out-of-band line ────────────────────────────────────────────────────
+#
+# The inject node had no runtime test at all, which is how three things
+# survived: it injected with no dashed edge drawn, it injected into the card
+# even when the dashed edge pointed somewhere else, and when it did inject the
+# traffic left no trace — no APDU event, and the dashed edge's own telemetry
+# stayed at zero for the life of the run.
+
+
+def inject_over_capture(*, oob: bool = True, oob_to: str = "c") -> Graph:
+    """probe -> inject -> capture, with the dashed edge drawn or not."""
+    # Leading newline: the template substitutes this after eight spaces of its
+    # own indentation, which is what every other caller's triple-quoted string
+    # is doing too.
+    extra_edges = "\n          - from: p:card\n            to: x:terminal\n"
+    if oob:
+        extra_edges += "          - from: x:oob\n            to: %s:terminal\n" % oob_to
+    return probe_over_capture(
+        extra_nodes="""
+          - id: x
+            type: inject
+            at: [200, 0]
+            config: {triggerIns: "A8", apdu: "80CA9F1700", when: after_response}
+        """,
+        extra_edges=extra_edges,
+    )
+
+
+def test_an_injection_leaves_a_trace_on_the_wire_and_on_its_edge():
+    engine = run_to_completion(inject_over_capture())
+
+    injected = [e for e in engine.sink.apdus if e.note == "out of band"]
+    assert [e.direction for e in injected] == ["command", "response"]
+    assert injected[0].hex == "80CA9F1700"
+    assert injected[0].mutated_by == "x"
+    # Attributed to the dashed edge, not to the chain.
+    assert injected[0].edge == "x:oob->c:terminal"
+
+    edge = engine.edge_telemetry("x:oob->c:terminal")
+    assert edge.apdus == 1
+    assert edge.bytes_out == 5
+    assert edge.bytes_in > 0
+
+    assert engine.telemetry("x").detail == "injected 1"
+
+
+def test_nothing_is_injected_without_a_dashed_edge():
+    """
+    The engine handed every transform a line to the card whether one was drawn
+    or not, so an inject node with no dashed edge injected anyway — a command
+    the graph did not authorise reaching a real card.
+    """
+    graph = inject_over_capture(oob=False)
+
+    # Said before Run, too: the editor shows this as a warning.
+    codes = [p.code for p in validate(graph)]
+    assert "unwired-oob" in codes
+
+    engine = run_to_completion(graph)
+    assert not [e for e in engine.sink.apdus if e.note == "out of band"]
+    # And the node still passed traffic through, which is the other half of the
+    # promise: no dashed edge disables the injection, not the node.
+    assert engine.telemetry("x").apdus > 0
+
+
+def test_a_dashed_edge_to_somewhere_else_is_refused_at_bind():
+    """It pointed at another node and the injection still went to the card."""
+    graph = inject_over_capture(oob_to="p")
+    # p:terminal does not exist, so wire the dashed line to a second card node
+    # that is not the one being driven.
+    graph = Graph.from_yaml(
+        """
+        version: 1
+        name: two cards
+        nodes:
+          - id: p
+            type: probe
+            at: [0, 0]
+            config: {depth: standard}
+          - id: x
+            type: inject
+            at: [200, 0]
+            config: {triggerIns: "A8", apdu: "80CA9F1700"}
+          - id: c
+            type: capture
+            at: [400, 0]
+            config: {path: "%s", strict: false}
+          - id: other
+            type: capture
+            at: [400, 200]
+            config: {path: "%s", strict: false}
+        edges:
+          - from: p:card
+            to: x:terminal
+          - from: x:card
+            to: c:terminal
+          - from: x:oob
+            to: other:terminal
+        """
+        % (CAPTURE.as_posix(), CAPTURE.as_posix())
+    )
+
+    engine = Engine(sink=Sink())
+    with pytest.raises(EngineError) as refused:
+        engine.arm(graph)
+    assert "out-of-band line goes to other" in str(refused.value)
+    assert engine.state == "faulted"
+    engine.stop()
+
+
+def test_an_injection_keeps_only_the_last_response():
+    """`results` held every response for the life of the run and nothing read
+    it."""
+    from plexus.nodes.transform import build as build_transform
+
+    answers = [b"\x90\x00", b"\x6a\x82"]
+    node = build_transform(
+        "inject",
+        {"triggerIns": "A8", "apdu": "80CA9F1700", "repeat": True},
+        card_execute=lambda apdu: answers.pop(0),
+    )
+    for _ in range(2):
+        node.on_response(bytes.fromhex("80A8000002830000"), b"\x90\x00")
+
+    assert node.fired == 2
+    assert node.last_response == b"\x6a\x82"
+    assert not hasattr(node, "results")
+
+
+def test_an_injection_with_no_line_counts_the_miss():
+    """The comment said the miss was counted; the code returned before
+    counting anything."""
+    from plexus.nodes.transform import build as build_transform
+
+    node = build_transform("inject", {"triggerIns": "A8", "apdu": "80CA9F1700"})
+    node.on_response(bytes.fromhex("80A8000002830000"), b"\x90\x00")
+    assert node.fired == 0
+    assert node.skipped == 1

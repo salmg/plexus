@@ -111,6 +111,21 @@ downstream of this node. That is the dashed wire on the canvas, and it is drawn
 rather than hidden because it spends the round trip twice: free on contact, and
 enough to time a contactless tap out.
 
+You have to draw it. Without the dashed wire the node passes traffic through
+and injects nothing, and the checks say so before you press Run. The card end
+of that wire is the one place a port takes two edges — the chain arrives on it
+and so does the dashed line — because "past everything downstream" means
+exactly that.
+
+`examples/inject-out-of-band.plexus.yaml` is the rig, and it needs no hardware:
+
+```bash
+plexus run examples/inject-out-of-band.plexus.yaml
+```
+
+The injected exchange is marked `injected by` in the trace and on its own edge,
+so you can tell it from traffic the terminal asked for.
+
 ### Timing
 
 Asks the terminal for more time with S(WTX) when the card is slow. Buys time on

@@ -346,7 +346,21 @@ def _edge_problems(graph: Graph) -> list[Problem]:
 
         # One conversation per port. Fanning a card out to two terminals is not a
         # graph this can run — it is two graphs.
-        for ref, port in ((edge.source, source), (edge.target, target)):
+        #
+        # The dashed line is the exception, and it has to be: an out-of-band
+        # edge lands on the terminal port of a card that is already in a chain,
+        # by definition — that is what "past everything downstream" means. With
+        # the rule applied to both ends, an inject node could not be wired at
+        # all. Draw the chain and the dashed edge is refused; draw the dashed
+        # edge and the chain is refused.
+        #
+        # So the source is counted — one dashed line per node, since that port
+        # carries one conversation like any other — and the target is not.
+        ends = [(edge.source, source)]
+        if not source.oob:
+            ends.append((edge.target, target))
+
+        for ref, port in ends:
             held = claimed.get(ref)
             if held is not None and held != edge.id:
                 out.append(
@@ -452,6 +466,23 @@ def _port_problems(graph: Graph) -> list[Problem]:
                         "unwired-requester",
                         "error",
                         f"{node.name} has nothing on its {port.label} port.",
+                        node_id=node.id,
+                    )
+                )
+            elif port.role == "requester":
+                # An out-of-band port with nothing on it is not an error — the
+                # node still passes traffic through — but the one thing it is
+                # for cannot happen. It used to inject anyway, because the
+                # engine handed every transform a line to the card whether one
+                # was drawn or not; now the edge is what authorises it, so
+                # saying so before Run is the difference between a node that
+                # does nothing and a node that does nothing silently.
+                out.append(
+                    Problem(
+                        "unwired-oob",
+                        "warning",
+                        f"{node.name} has nothing on its {port.label} port, "
+                        "so it will pass traffic through and inject nothing.",
                         node_id=node.id,
                     )
                 )
