@@ -149,6 +149,8 @@ export const en = {
     "These nodes form a loop: {nodes}. A conversation has to end somewhere.",
   "check.unwiredRequester":
     "{node} has nothing on its {port} port. Wire it to something that answers.",
+  "check.twoChains":
+    "This graph has {count} separate chains: {nodes}. Plexus runs one at a time, and would run the one starting at {running}.",
   "check.unwiredOob":
     "{node} has nothing on its {port} port, so it will pass traffic through and inject nothing.",
   "check.unwiredResponder": "Nothing is asking {node} anything. It will sit idle.",
@@ -158,8 +160,6 @@ export const en = {
     "{nodes} both claim {name}. One device cannot be a target and an initiator at the same time — the failure that comes out of trying is a timeout, not a message.",
   "check.unpairedLink":
     "This edge crosses machines and carries card traffic unauthenticated. Set a pairing secret on {node}, or tunnel it over SSH.",
-  "check.tapBudget.fail":
-    "About {ms} ms per exchange, out and back. A contactless kernel will abandon the transaction well before that.",
   "check.tapBudget.warn":
     "About {ms} ms per exchange, out and back. Close to what a contactless kernel will tolerate — expect dropped taps.",
 

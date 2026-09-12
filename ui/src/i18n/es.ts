@@ -160,6 +160,8 @@ export const es: Record<string, string> = {
     "Estos nodos forman un bucle: {nodes}. Una conversación tiene que acabar en algún sitio.",
   "check.unwiredRequester":
     "{node} no tiene nada en su puerto {port}. Conéctalo a algo que responda.",
+  "check.twoChains":
+    "Este grafo tiene {count} cadenas separadas: {nodes}. Plexus ejecuta una cada vez, y ejecutaría la que empieza en {running}.",
   "check.unwiredOob":
     "{node} no tiene nada en su puerto {port}, así que dejará pasar el tráfico sin inyectar nada.",
   "check.unwiredResponder": "Nadie le pregunta nada a {node}. Se quedará inactivo.",
@@ -169,8 +171,6 @@ export const es: Record<string, string> = {
     "{nodes} reclaman los dos {name}. Un mismo dispositivo no puede ser objetivo e iniciador a la vez: lo que sale de intentarlo es un tiempo de espera agotado, no un mensaje.",
   "check.unpairedLink":
     "Esta arista cruza de máquina y lleva tráfico de tarjeta sin autenticar. Pon un secreto de emparejamiento en {node}, o túnelalo por SSH.",
-  "check.tapBudget.fail":
-    "Unos {ms} ms por intercambio, ida y vuelta. Un kernel sin contacto abandonará la transacción mucho antes de eso.",
   "check.tapBudget.warn":
     "Unos {ms} ms por intercambio, ida y vuelta. Cerca de lo que tolera un kernel sin contacto: espera acercamientos perdidos.",
 

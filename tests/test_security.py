@@ -16,6 +16,10 @@ import pytest
 from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 
+# The bounded frame collector, not a second copy of it: an unbounded read here
+# would hang this suite exactly as it hung that one.
+from frames import collect
+
 from plexus.api import console
 from plexus.api import server as server_module
 from plexus.api.server import MAX_FRAME_BYTES, create_app, origin_ok
@@ -24,10 +28,6 @@ from plexus.nodes.paths import PathRefused, resolve_read, resolve_write, workspa
 from plexus.nodes.transform import MAX_APDU_BYTES, TransformError
 from plexus.nodes.transform import build as build_transform
 from plexus.runtime import Engine
-
-# The bounded frame collector, not a second copy of it: an unbounded read here
-# would hang this suite exactly as it hung that one.
-from tests.test_server import collect
 
 REPO = Path(__file__).resolve().parent.parent
 CAPTURE = "tests/captures/mastercard-probe.jsonl"

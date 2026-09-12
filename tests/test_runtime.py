@@ -34,6 +34,22 @@ REPO = Path(__file__).resolve().parent.parent
 CAPTURE = Path(__file__).resolve().parent / "captures" / "mastercard-probe.jsonl"
 
 
+
+@pytest.fixture(autouse=True)
+def workspace_is_the_repo(monkeypatch):
+    """
+    Every test here runs with the workspace where the repository is.
+
+    A node may only reach paths inside the workspace, and the workspace
+    defaults to the process's *working directory* — so tests that name
+    `logs/…` wrote relative to wherever pytest happened to be started, which
+    outside the repository root means either a refusal or a file left in
+    someone's home directory. tests/test_security.py has always pinned it; this
+    module wrote traces without.
+    """
+    monkeypatch.chdir(REPO)
+    monkeypatch.setenv("PLEXUS_WORKSPACE", str(REPO))
+
 def graph_for(body: str) -> Graph:
     return Graph.from_yaml(textwrap.dedent(body))
 
@@ -403,11 +419,32 @@ def test_the_build_knows_which_nodes_it_can_bind():
     assert ready["acr122u.target"] == "pending"
 
 
-def test_an_unimplemented_terminal_names_its_daemon():
-    node = terminal_nodes.build("simtrace2", {})
+def test_an_unimplemented_terminal_names_its_daemon_at_build_time():
+    """
+    It used to build a stand-in that raised from `drive` — on the relay
+    thread, after `arm` had reported "running" and opened the card. Refused
+    where the card side has always refused it: at bind, before anything is
+    claimed.
+    """
     with pytest.raises(terminal_nodes.TerminalUnavailable) as caught:
-        node.drive(None, lambda: False)
+        terminal_nodes.build("simtrace2", {})
     assert "simtrace2-remsim" in str(caught.value)
+
+
+def test_a_terminal_this_build_cannot_drive_opens_no_card():
+    graph = probe_over_capture()
+    # vpcd rather than simtrace2: that one needs a device, so the checks would
+    # refuse it first and this would be testing validation instead of bind.
+    graph.node("p").type = "vpcd"
+    graph.node("p").config = {}
+
+    engine = Engine(sink=Sink())
+    with pytest.raises(EngineError) as refused:
+        engine.arm(graph)
+    assert "virtualsmartcard" in str(refused.value)
+    assert engine.state == "faulted"
+    assert engine._card is None, "the card was opened for a run that could not start"
+    assert not engine.running
 
 
 def test_a_capture_node_with_no_file_refuses():
@@ -1145,3 +1182,72 @@ def test_the_detail_setting_reaches_the_file(tmp_path, monkeypatch):
     written = json.loads((tmp_path / "out.jsonl").read_text(encoding="utf-8").strip())
     assert written["status"]["meaning"] == "OK"
     assert any(t.get("name") == "Application PAN" for t in written["tlv"])
+
+
+def test_an_armed_mutation_node_leaves_no_playbook_behind():
+    """
+    `mkstemp` returns an open descriptor *and* a path; taking `[1]` dropped the
+    descriptor. On Windows that open handle is also why `_cleanup`'s unlink
+    quietly failed, so every mutation node ever armed left its playbook in the
+    temp directory. Measured here: five before the fix, none after.
+    """
+    import glob
+    import os
+    import tempfile
+
+    pattern = os.path.join(tempfile.gettempdir(), "plexus-playbook-*.yaml")
+    before = set(glob.glob(pattern))
+
+    for _ in range(3):
+        node = build_transform(
+            "mutation",
+            {"playbook": "enabled: true\n", "logMutations": False},
+        )
+        node.close()
+
+    assert set(glob.glob(pattern)) == before, "a playbook was left in the temp directory"
+
+
+def test_the_probe_says_what_the_card_turned_out_to_be():
+    """
+    The reason the node exists, and for a while nobody could see it:
+    `findings`, `aids` and `sent` were all filled in and read by nothing at
+    all, so a node whose job is to tell you what a card *is* reported only how
+    many APDUs went past.
+    """
+    engine = run_to_completion(probe_over_capture())
+
+    said = [line.text for line in engine.sink.logs]
+    assert "standard probe: 4 commands sent." in said
+    assert "Advertised 1 application: A0000000041010" in said
+    assert "Selected: A0000000041010 (MasterCard)" in said
+    assert "Read 1 record(s)." in said
+
+
+def test_the_summary_carries_no_pan_or_expiry():
+    """
+    The records the probe reads contain both, and they go in the trace when
+    you ask for one. A summary printed by default is a different decision.
+    """
+    engine = run_to_completion(probe_over_capture())
+
+    said = " ".join(line.text for line in engine.sink.logs)
+    assert "5413330012345678" not in said, "the PAN reached a log line"
+    assert "251231" not in said, "the expiry date reached a log line"
+
+
+def test_a_probe_that_selected_nothing_says_so():
+    from plexus.nodes.terminal import FingerprintProbe
+
+    probe = FingerprintProbe()
+    probe.sent = 2
+    probe.findings = {"aids": ["A0000000031010"]}
+
+    lines = probe.summary()
+    assert lines[-1] == "Nothing selected: the card refused every AID it offered."
+
+
+def test_a_probe_that_never_ran_says_nothing():
+    from plexus.nodes.terminal import FingerprintProbe
+
+    assert FingerprintProbe().summary() == []

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import tempfile
 import threading
 from pathlib import Path
@@ -183,9 +184,14 @@ class Mutation:
         else:
             parsed.pop("log_path", None)
 
-        self._temp = Path(
-            tempfile.mkstemp(prefix="plexus-playbook-", suffix=".yaml")[1]
-        )
+        # `mkstemp` returns an open descriptor *and* a path. Taking `[1]` and
+        # dropping the descriptor leaked it for the life of the process — and
+        # on Windows an open handle is also why `_cleanup`'s unlink quietly
+        # failed, so every mutation node ever armed left its playbook behind in
+        # the temp directory.
+        handle, temp_path = tempfile.mkstemp(prefix="plexus-playbook-", suffix=".yaml")
+        os.close(handle)
+        self._temp = Path(temp_path)
         # The *sanitised* document, not the operator's text. Atrium's `reload()`
         # re-reads this file at the start of every transaction and takes
         # `log_path` from it again, so handing over the original would leave the

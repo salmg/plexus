@@ -17,7 +17,6 @@ import pytest
 
 from plexus.catalogue import CATALOGUE
 from plexus.graph import (
-    TAP_BUDGET_FAIL_MS,
     TAP_BUDGET_WARN_MS,
     Device,
     Graph,
@@ -271,12 +270,21 @@ def test_a_local_two_reader_relay_says_nothing_about_timing():
     assert [p.code for p in validate(graph)] == []
 
 
-def test_the_thresholds_are_reachable_by_a_graph_someone_could_draw():
+def test_the_threshold_is_reachable_by_a_graph_someone_could_draw():
     """
-    Regression on a check that did nothing. The first thresholds were compared
-    against the one-way sum and set at 120/300 ms, while the dearest chain the
-    catalogue allows is 43 ms one way — so the warning could not fire and the
-    error needed 79 stacked mutation nodes.
+    Regression on a check that did nothing, twice over.
+
+    The first thresholds were compared against the one-way sum and set at
+    120/300 ms, while the dearest chain the catalogue allows is 43 ms one way —
+    so the warning could not fire and the error needed 79 stacked mutation
+    nodes. Fixing that left a *second* threshold at 150 ms round trip, which
+    still needed thirty-four; and the test written to guard it asserted
+    `TAP_BUDGET_FAIL_MS <= worst_round_trip * 2`, arithmetic on a figure nobody
+    draws, which would hold for any error threshold up to twice the worst real
+    chain. So the error was removed rather than re-tuned: see the note on
+    TAP_BUDGET_WARN_MS.
+
+    What is left has to be reachable, and by a graph rather than by algebra.
     """
     dearest_terminal = max(
         (t for t in CATALOGUE if t.node_class == "terminal"),
@@ -293,11 +301,58 @@ def test_the_thresholds_are_reachable_by_a_graph_someone_could_draw():
     ) * 2
 
     assert worst_round_trip >= TAP_BUDGET_WARN_MS, (
-        "no drawable graph can reach the warning threshold"
+        "no drawable graph can reach the threshold"
     )
-    # The error is meant to be hard to reach, but not impossible: a couple of
-    # transforms on top of the worst chain has to be able to get there.
-    assert TAP_BUDGET_FAIL_MS <= worst_round_trip * 2
+
+    # And by drawing one: a contactless terminal and the dearest card, with
+    # nothing else in between. If that does not warn, the threshold is above
+    # anything a rig will meet.
+    plain = stacked(None, 0)
+    assert any(p.code == "tap-budget" for p in validate(plain)), (
+        "a plain relay to the dearest card does not reach the threshold"
+    )
+
+    # The shipped relay warns too, which is the message: relaying a card to a
+    # phone over a network is close to what a kernel tolerates.
+    shipped = [p for p in validate(Graph.load(EXAMPLE)) if p.code == "tap-budget"]
+    assert shipped and all(p.level == "warning" for p in shipped)
+
+
+def test_the_timing_check_never_blocks_a_run():
+    """
+    It is a rule of thumb, not a figure from a specification, so it says so
+    rather than refusing. A blocking version of this could only fire in the
+    two-millisecond gap above the flagship example.
+    """
+    for count in (0, 1, 5, 40):
+        graph = stacked("mutation", count)
+        blocking = [p for p in validate(graph) if p.code == "tap-budget" and p.blocking]
+        assert not blocking, "%d transforms blocked the run on timing" % count
+
+
+def stacked(transform_key, count: int) -> Graph:
+    """A contactless terminal, `count` transforms, and the dearest card."""
+    from plexus.graph import Edge, Node, PortRef
+
+    nodes = [Node(id="t", type="acr122u.target", position=(0, 0), config={})]
+    edges = []
+    previous = "t"
+    for i in range(count):
+        node_id = "x%d" % i
+        nodes.append(Node(id=node_id, type=transform_key, position=(100 * i, 0)))
+        edges.append(
+            Edge(
+                "%s->%s" % (previous, node_id),
+                PortRef(previous, "card"),
+                PortRef(node_id, "terminal"),
+            )
+        )
+        previous = node_id
+    nodes.append(Node(id="c", type="nfcgate", position=(100 * count, 0), config={}))
+    edges.append(
+        Edge("%s->c" % previous, PortRef(previous, "card"), PortRef("c", "terminal"))
+    )
+    return Graph(name="stacked", hosts=[], nodes=nodes, edges=edges)
 
 
 def test_an_out_of_band_edge_is_not_a_step_in_the_chain():
@@ -763,3 +818,83 @@ def test_one_dashed_line_per_node_is_still_the_rule():
     contended = [p for p in validate(graph) if p.code == "port-contended"]
     assert contended, "an out-of-band port wired twice is still two conversations"
     assert "out of band" in contended[0].message
+
+
+def test_two_complete_chains_are_refused_rather_than_half_run():
+    """
+    `chain` takes `roots[0]`, so a file with two rigs in it armed, ran one and
+    said nothing about the other — and which one depended on the order the
+    nodes happened to be written in. The editor's `buildChain` takes `roots[0]`
+    too, so both halves ran the same half of the graph and neither mentioned
+    it.
+    """
+    graph = build(
+        """
+        version: 1
+        name: two rigs in one file
+        nodes:
+          - id: p1
+            type: probe
+            at: [0, 0]
+          - id: c1
+            type: capture
+            at: [300, 0]
+            config: {path: logs/a.jsonl}
+          - id: p2
+            type: probe
+            at: [0, 200]
+          - id: c2
+            type: capture
+            at: [300, 200]
+            config: {path: logs/b.jsonl}
+        edges:
+          - from: p1:card
+            to: c1:terminal
+          - from: p2:card
+            to: c2:terminal
+        """
+    )
+    problems = [p for p in validate(graph) if p.code == "two-chains"]
+    assert len(problems) == 1
+    assert problems[0].blocking
+    # Named *and* identified: two chains usually start at two nodes of the same
+    # type, and the type alone says nothing about which one to remove.
+    assert "(p1)" in problems[0].message
+    assert "(p2)" in problems[0].message
+
+
+def test_one_chain_is_not_two():
+    assert not [p for p in validate(Graph.load(EXAMPLE)) if p.code == "two-chains"]
+
+
+def test_a_disabled_second_chain_is_not_a_second_chain():
+    """Disabling is how you park part of a rig, including a whole one."""
+    graph = build(
+        """
+        version: 1
+        name: one parked
+        nodes:
+          - id: p1
+            type: probe
+            at: [0, 0]
+          - id: c1
+            type: capture
+            at: [300, 0]
+            config: {path: logs/a.jsonl}
+          - id: p2
+            type: probe
+            at: [0, 200]
+            disabled: true
+          - id: c2
+            type: capture
+            at: [300, 200]
+            disabled: true
+            config: {path: logs/b.jsonl}
+        edges:
+          - from: p1:card
+            to: c1:terminal
+          - from: p2:card
+            to: c2:terminal
+        """
+    )
+    assert not [p for p in validate(graph) if p.code == "two-chains"]

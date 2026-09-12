@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Deque, Dict, List, Optional
 
 
 @dataclass
@@ -97,6 +98,16 @@ class LogLine:
         }
 
 
+#: How much a sink keeps. It collects because that is what a test and
+#: `plexus run` read back afterwards — but a relay left running for a day would
+#: otherwise accumulate every exchange it ever carried, inside the one process
+#: whose job is to hold a card open and not fall over.
+#:
+#: Five thousand APDU events is far more than anyone reads and a few megabytes
+#: at most. A listener that needs the whole trace has the trace node for it.
+RETAIN = 5000
+
+
 class Sink:
     """
     Somewhere for events to go.
@@ -104,15 +115,18 @@ class Sink:
     The base collects them, which is all a test needs. The WebSocket server
     subclasses it to batch and write. Nothing here blocks: a slow listener must
     not be able to stall the relay, because the relay is holding a card.
+
+    `retain` bounds what is kept. Zero keeps nothing, which is what a sink that
+    forwards everything the moment it arrives should do.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, retain: int = RETAIN) -> None:
         self._lock = threading.Lock()
-        self.states: List[Dict[str, Any]] = []
         self.nodes: Dict[str, NodeTelemetry] = {}
         self.edges: Dict[str, EdgeTelemetry] = {}
-        self.apdus: List[ApduEvent] = []
-        self.logs: List[LogLine] = []
+        self.states: "Deque[Dict[str, Any]]" = deque(maxlen=retain)
+        self.apdus: "Deque[ApduEvent]" = deque(maxlen=retain)
+        self.logs: "Deque[LogLine]" = deque(maxlen=retain)
 
     # ── What the engine calls ───────────────────────────────────────────
 
@@ -150,10 +164,17 @@ class Sink:
 
 
 class CallbackSink(Sink):
-    """A sink that hands every frame to a function. Used by the server."""
+    """
+    A sink that hands every frame to a function. Used by the server.
+
+    Retains nothing: it forwards each frame the moment it arrives, and the
+    server process is the one that stays up for days. Inheriting the base
+    class's collection meant a relay left running accumulated every APDU event
+    and log line it ever carried, for a reader that never came back to them.
+    """
 
     def __init__(self, on_frame: Callable[[Dict[str, Any]], None]) -> None:
-        super().__init__()
+        super().__init__(retain=0)
         self._on_frame = on_frame
 
     def emit(self, frame: Dict[str, Any]) -> None:

@@ -188,7 +188,12 @@ def _run(graph: Graph, quiet: bool = False, timeout: float = 120.0) -> int:
         print("error: the run did not finish within %.0fs" % timeout, file=sys.stderr)
         return 1
 
-    exchanges = engine.telemetry(graph.nodes[0].id).apdus if graph.nodes else 0
+    # The chain head, not `graph.nodes[0]`. Those are the same node only when
+    # the terminal happens to be written first in the file, and nothing makes
+    # it — a graph saved with the card at the top reported the card's count,
+    # or zero for a node that never ran.
+    steps = chain(graph)
+    exchanges = engine.telemetry(steps[0].id).apdus if steps else 0
     errors = sum(t.errors for t in engine._telemetry.values())
     print("\n%d exchanges, %d errors." % (exchanges, errors))
     return 1 if errors or engine.state == "faulted" else 0

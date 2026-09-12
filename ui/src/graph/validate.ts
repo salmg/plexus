@@ -29,9 +29,9 @@ export interface Problem {
 }
 
 /**
- * Rules of thumb, not figures from a specification.  Contactless kernels
+ * A rule of thumb, not a figure from a specification.  Contactless kernels
  * enforce a per-exchange timing budget; the exact number varies by kernel and
- * is not something this tool can know.  These exist so a graph that is
+ * is not something this tool can know.  This exists so a graph that is
  * obviously too slow says so before hardware is plugged in.
  *
  * Compared against the *round trip* — a command out and a response back —
@@ -40,13 +40,21 @@ export interface Problem {
  * ever reached: the dearest chain the catalogue allows is 43 ms one way, so the
  * check could not fire and was worse than no check at all.
  *
+ * **One threshold, not two.** There was a second at 150 ms that raised an
+ * error and disabled Run, and it had the same defect one layer down: the
+ * dearest graph anyone can draw is 86 ms round trip, so reaching 150 took
+ * thirty-four stacked mutation nodes. Lowering it does not help either — the
+ * contactless relay this project opens with sits at 84 ms, so any reachable
+ * error threshold either fires on the flagship example or lives in the
+ * two-millisecond gap above it. A warning that fires for every real relay is
+ * the honest signal; a blocking check that cannot fire is not.
+ *
  * Known simplification: an injection node is counted at its own small cost, not
  * at the extra round trip it really spends reaching the card out of band.
  *
- * Keep these in step with `plexus/graph.py`.
+ * Keep this in step with `plexus/graph.py`.
  */
 export const TAP_BUDGET_WARN_MS = 60;
-export const TAP_BUDGET_FAIL_MS = 150;
 
 const CONTACTLESS_TERMINALS = new Set(["acr122u.target"]);
 
@@ -183,6 +191,7 @@ export function validate(graph: PlexusGraph, devices: Device[]): Problem[] {
   }
 
   problemsFromEdges(graph, active, problems);
+  problemsFromChains(active, problems);
   problemsFromPorts(graph, active, problems);
   problemsFromDevices(active, devices, problems);
   problemsFromHosts(graph, active, problems);
@@ -357,6 +366,43 @@ function findCycle(graph: PlexusGraph, alive: Set<string>): string[] {
     }
   }
   return [];
+}
+
+/**
+ * One graph, one conversation.
+ *
+ * `chainOf` starts at a node that only asks and follows the edges. When there
+ * is more than one such node there is more than one chain, and it takes
+ * `roots[0]` — so a graph with two complete rigs in it armed, ran one, and
+ * said nothing about the other. Which one depended on the order the nodes
+ * happened to be written in.
+ *
+ * `plexus/graph.py` carries the same check.
+ */
+function problemsFromChains(active: PlexusNode[], out: Problem[]): void {
+  const roots = active.filter((n) => {
+    const type = nodeType(n.type);
+    if (!type) return false;
+    const asks = type.ports.some((p) => p.role === "requester" && !p.oob);
+    const answers = type.ports.some((p) => p.role === "responder");
+    return asks && !answers;
+  });
+  if (roots.length < 2) return;
+
+  // Named *and* identified. Two chains often start at two nodes of the same
+  // type, and "Fingerprint probe, Fingerprint probe" says nothing about which
+  // one to remove. `buildChain` starts at roots[0], so that is the one that runs.
+  const where = (n: PlexusNode) => `${nodeLabel(n)} (${n.id})`;
+  out.push({
+    code: "two-chains",
+    level: "error",
+    nodeId: roots[1].id,
+    message: t("check.twoChains", {
+      count: roots.length,
+      nodes: roots.map(where).join(", "),
+      running: where(roots[0]),
+    }),
+  });
 }
 
 function problemsFromPorts(
@@ -542,17 +588,9 @@ function problemsFromTiming(
 ): void {
   for (const node of active) {
     if (!CONTACTLESS_TERMINALS.has(node.type)) continue;
-
     // Out and back: the interval the terminal times, not the one-way sum.
     const ms = chainLatency(graph, node.id) * 2;
-    if (ms >= TAP_BUDGET_FAIL_MS) {
-      out.push({
-        code: "tap-budget",
-        level: "error",
-        nodeId: node.id,
-        message: t("check.tapBudget.fail", { ms }),
-      });
-    } else if (ms >= TAP_BUDGET_WARN_MS) {
+    if (ms >= TAP_BUDGET_WARN_MS) {
       out.push({
         code: "tap-budget",
         level: "warning",

@@ -222,7 +222,13 @@ class Engine:
         for edge_id in self._edge_ids:
             self._edges[edge_id] = EdgeTelemetry()
 
-        # Card first: transforms may need an out-of-band line to it, and a
+        # Terminal first, because it is the one that costs nothing to refuse.
+        # It is built rather than connected — nothing is claimed here — so a
+        # node this build cannot drive says so before a reader is opened.
+        self._terminal = terminal_nodes.build(head.type, head.config)
+        self._mark(head.id, status="ready")
+
+        # Card next: transforms may need an out-of-band line to it, and a
         # transform built against a card that then fails to open would have to
         # be torn down again.
         self._card = card_nodes.build(tail.type, tail.config)
@@ -277,9 +283,6 @@ class Engine:
             self._transform_by_id[node.id] = built
             self._mark(node.id, status="ready")
 
-        self._terminal = terminal_nodes.build(head.type, head.config)
-        self._mark(head.id, status="ready")
-
         self._chain = Chain(
             self._card,
             self._transforms,
@@ -310,11 +313,29 @@ class Engine:
         exchanges = chain.exchanges
         if not self._stop.is_set():
             self._settle()
+            # What the terminal found, if it has anything to say. A probe fills
+            # in a whole picture of the card and used to hand it to nobody:
+            # `findings`, `aids` and `sent` were read by nothing at all, so the
+            # node whose purpose is to tell you what a card *is* told you only
+            # how many APDUs went past.
+            source = self._node_ids[0] if self._node_ids else "runtime"
+            for line in self._terminal_summary():
+                self._log("info", line, source)
             self._log(
                 "info",
                 "The terminal finished after %d exchanges. The card is still bound — "
                 "send APDUs with tx, or stop to release it." % exchanges,
             )
+
+    def _terminal_summary(self) -> List[str]:
+        summarise = getattr(self._terminal, "summary", None)
+        if summarise is None:
+            return []
+        try:
+            return list(summarise())
+        except Exception:  # pragma: no cover - a summary is not the run
+            log.debug("terminal summary failed", exc_info=True)
+            return []
 
     def stop(self, timeout: float = 5.0) -> None:
         """Ask the driver to stop between exchanges, then release everything."""

@@ -60,8 +60,9 @@ the second node, with the reason on screen.
   model becomes a visible property of the picture rather than a README section.
 - **The chain fits in a tap.** Each node declares what it costs; a contactless
   chain that sums past what a kernel will tolerate says so before you plug
-  anything in. These thresholds are rules of thumb, not figures from a
-  specification — see `TAP_BUDGET_WARN_MS`.
+  anything in. That threshold is a rule of thumb, not a figure from a
+  specification, so it warns rather than refuses — see `TAP_BUDGET_WARN_MS`,
+  which carries the reason there is one of it and not two.
 
 ## A graph is untrusted input
 

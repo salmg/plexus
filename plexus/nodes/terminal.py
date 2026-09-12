@@ -24,24 +24,19 @@ from plexus.nodes.tlv import find_all, tlv_walk  # noqa: F401
 
 log = logging.getLogger(__name__)
 
-
 class TerminalUnavailable(RuntimeError):
     """This terminal node cannot be bound here. User-facing, and says why."""
-
 
 # ── Reading a card's answers ──────────────────────────────────────────────
 
 SW_OK = b"\x90\x00"
 
-
 def succeeded(response: bytes) -> bool:
     return len(response) >= 2 and response[-2:] == SW_OK
-
 
 # ── The probe ───────────────────────────────────────────────────────────────
 
 PPSE = bytes.fromhex("00A404000E325041592E5359532E444446303100")
-
 
 class FingerprintProbe:
     """
@@ -86,6 +81,14 @@ class FingerprintProbe:
             if not succeeded(fci):
                 continue
             self.findings.setdefault("selected", []).append(aid.hex().upper())
+            # The application label, when the card gives one. It is the one
+            # field that turns a hex string into something a person reads —
+            # and it is not sensitive, which the PAN in the same records is.
+            label = find_all(fci, 0x50)
+            if label:
+                self.findings.setdefault("labels", {})[aid.hex().upper()] = (
+                    label[0].decode("latin-1", "replace")
+                )
 
             if self.depth == "quick":
                 continue
@@ -94,15 +97,57 @@ class FingerprintProbe:
             if options is None:
                 return
             if succeeded(options):
+                self.findings["records"] = self.findings.get("records", 0)
                 for command in read_records(options, deep=self.depth == "deep"):
                     if stop():
                         return
-                    if ask(command) is None:
+                    record = ask(command)
+                    if record is None:
                         return
+                    if succeeded(record):
+                        self.findings["records"] += 1
 
     def note(self, command: bytes, response: bytes) -> None:
         self.sent += 1
 
+    def summary(self) -> List[str]:
+        """
+        What the card turned out to be, in the words a person would use.
+
+        This is the reason the node exists, and for a while nobody could see
+        it: `findings`, `aids` and `sent` were all filled in and read by
+        nothing at all. The engine asks for this when the probe finishes.
+
+        Deliberately no PAN, expiry or cardholder name. Those cross the wire
+        and go in the trace if you asked for one; a summary printed by default
+        is a different decision.
+        """
+        if not self.findings:
+            return []
+
+        aids = self.findings.get("aids") or []
+        selected = self.findings.get("selected") or []
+        labels = self.findings.get("labels") or {}
+
+        lines = ["%s probe: %d commands sent." % (self.depth, self.sent)]
+        if aids:
+            lines.append(
+                "Advertised %d application%s: %s"
+                % (len(aids), "" if len(aids) == 1 else "s", ", ".join(aids))
+            )
+        if selected:
+            lines.append(
+                "Selected: %s"
+                % ", ".join(
+                    "%s (%s)" % (aid, labels[aid]) if aid in labels else aid
+                    for aid in selected
+                )
+            )
+        else:
+            lines.append("Nothing selected: the card refused every AID it offered.")
+        if "records" in self.findings:
+            lines.append("Read %d record(s)." % self.findings["records"])
+        return lines
 
 def _asker(channel, stop, probe: "FingerprintProbe"):
     """One place that sends, counts, and honours the stop flag."""
@@ -116,7 +161,6 @@ def _asker(channel, stop, probe: "FingerprintProbe"):
 
     return ask
 
-
 #: Tried only when a card has no PPSE — contact cards often do not.
 _WELL_KNOWN_AIDS = (
     bytes.fromhex("A0000000031010"),  # Visa
@@ -124,10 +168,8 @@ _WELL_KNOWN_AIDS = (
     bytes.fromhex("A0000000250109"),  # Amex
 )
 
-
 def select_aid(aid: bytes) -> bytes:
     return bytes([0x00, 0xA4, 0x04, 0x00, len(aid)]) + aid + b"\x00"
-
 
 def gpo_for(fci: bytes) -> bytes:
     """
@@ -141,7 +183,6 @@ def gpo_for(fci: bytes) -> bytes:
     filler = bytes(_pdol_length(pdol))
     data = b"\x83" + bytes([len(filler)]) + filler
     return bytes([0x80, 0xA8, 0x00, 0x00, len(data)]) + data + b"\x00"
-
 
 def _pdol_length(pdol: bytes) -> int:
     """Total bytes a PDOL asks for. A DOL is tag/length pairs with no values."""
@@ -159,7 +200,6 @@ def _pdol_length(pdol: bytes) -> int:
         total += pdol[i]
         i += 1
     return total
-
 
 def read_records(gpo_response: bytes, deep: bool = False) -> List[bytes]:
     """
@@ -187,23 +227,7 @@ def read_records(gpo_response: bytes, deep: bool = False) -> List[bytes]:
 
     return commands
 
-
 # ── The rest ────────────────────────────────────────────────────────────────
-
-
-class NotHereYet:
-    """A terminal node that needs hardware, or a daemon started by hand."""
-
-    def __init__(self, node_type: str, needs: str) -> None:
-        self.node_type = node_type
-        self.needs = needs
-
-    def drive(self, channel, stop) -> None:
-        raise TerminalUnavailable(
-            f"The {self.node_type} node is not implemented in this build. "
-            f"It needs {self.needs}."
-        )
-
 
 PENDING = {
     "acr122u.target": "pyscard, an ACR122U, and atrium's PN532 emulator",
@@ -212,11 +236,22 @@ PENDING = {
     "agent": "a configured model back end and atrium's agent loop",
 }
 
-
 def build(node_type: str, config: Dict[str, Any]):
-    """Make the terminal-side node a catalogue key names."""
+    """
+    Make the terminal-side node a catalogue key names.
+
+    A terminal this build cannot drive is refused *here*, not when the relay
+    thread first calls `drive`. It used to return a stand-in that raised on the
+    worker thread: `arm` reported "running", the editor showed a run in
+    progress, and a moment later the state went to faulted with the card
+    already open. The card side has always refused at bind, because its
+    stand-in raises from `connect`; this is the same answer at the same moment.
+    """
     if node_type == "probe":
         return FingerprintProbe(depth=str(config.get("depth") or "standard"))
     if node_type in PENDING:
-        return NotHereYet(node_type, PENDING[node_type])
+        raise TerminalUnavailable(
+            "The %s node is not implemented in this build. It needs %s."
+            % (node_type, PENDING[node_type])
+        )
     raise TerminalUnavailable(f"No terminal implementation for {node_type!r}.")

@@ -35,24 +35,33 @@ from plexus.catalogue import CATALOGUE, NodeType, Port
 Channel = Literal["apdu", "iso8583"]
 PortRole = Literal["requester", "responder"]
 ProblemLevel = Literal["error", "warning"]
-
-#: Rules of thumb, not figures from a specification.  Contactless kernels
-#: enforce a per-exchange timing budget whose exact value varies by kernel and
-#: is not something this tool can know.  They exist so that a graph which is
+#: A rule of thumb, not a figure from a specification. Contactless kernels
+#: enforce a per-exchange timing budget; the exact number varies by kernel and
+#: is not something this tool can know. This exists so a graph that is
 #: obviously too slow says so before hardware is plugged in.
 #:
-#: These are compared against the **round trip** — a command out and a response
-#: back — because that is the interval a terminal actually times.  The first
-#: version compared the one-way sum against 120 ms, which no graph anyone could
-#: draw ever reached: the dearest chain the catalogue allows is 43 ms one way,
-#: so the check could not fire and was worse than no check at all.
+#: Compared against the *round trip* — a command out and a response back —
+#: because that is the interval a terminal actually times. The first version
+#: compared the one-way sum against 120 ms, which no graph anyone could draw
+#: ever reached: the dearest chain the catalogue allows is 43 ms one way, so
+#: the check could not fire and was worse than no check at all.
+#:
+#: **One threshold, not two.** There was a second at 150 ms that raised an
+#: error and blocked Run, and it had the same defect one layer down: the
+#: dearest graph anyone can draw is 86 ms round trip (every transform in the
+#: catalogue, on the dearest terminal and the dearest card), so reaching 150
+#: took thirty-four stacked mutation nodes. Lowering it does not help either —
+#: `examples/contactless-relay.plexus.yaml`, the rig this project opens with,
+#: sits at 84 ms, so any reachable error threshold either fires on the flagship
+#: example or lives in the two-millisecond gap above it. A warning that fires
+#: for every real relay is the honest signal; a blocking check that cannot fire
+#: is the thing this file keeps having to be rescued from.
 #:
 #: Known simplification: an injection node is counted at its own small cost,
 #: not at the extra round trip it really spends reaching the card out of band.
-#: Modelling that properly means a per-node cost that depends on what is
-#: downstream of it; until then the node's own caveat carries the warning.
+#:
+#: Keep this in step with `ui/src/graph/validate.ts`.
 TAP_BUDGET_WARN_MS = 60
-TAP_BUDGET_FAIL_MS = 150
 
 CONTACTLESS_TERMINALS = {"acr122u.target"}
 
@@ -253,6 +262,7 @@ def validate(graph: Graph, devices: Iterable[Device] = ()) -> list[Problem]:
         ]
 
     problems += _edge_problems(graph)
+    problems += _chain_problems(graph)
     problems += _port_problems(graph)
     problems += _device_problems(graph, by_id)
     problems += _host_problems(graph)
@@ -624,17 +634,7 @@ def _timing_problems(graph: Graph) -> list[Problem]:
             continue
         # Out and back: the interval the terminal times, not the one-way sum.
         ms = chain_latency(graph, node.id) * 2
-        if ms >= TAP_BUDGET_FAIL_MS:
-            out.append(
-                Problem(
-                    "tap-budget",
-                    "error",
-                    f"About {ms} ms per exchange, out and back. A contactless "
-                    "kernel will abandon the transaction well before that.",
-                    node_id=node.id,
-                )
-            )
-        elif ms >= TAP_BUDGET_WARN_MS:
+        if ms >= TAP_BUDGET_WARN_MS:
             out.append(
                 Problem(
                     "tap-budget",
@@ -645,6 +645,47 @@ def _timing_problems(graph: Graph) -> list[Problem]:
                 )
             )
     return out
+
+
+def _chain_problems(graph: Graph) -> list[Problem]:
+    """
+    One graph, one conversation.
+
+    `chain` starts at a node that only asks and follows the edges. When there
+    is more than one such node there is more than one chain, and it takes
+    `roots[0]` — so a graph with two complete rigs in it armed, ran one, and
+    said nothing about the other. Which one depended on the order the nodes
+    happened to be written in.
+
+    `ui/src/runtime/mock.ts` takes `roots[0]` too, so both halves ran the same
+    half of the graph and neither mentioned it.
+    """
+    roots = [
+        n
+        for n in graph.active
+        if (spec := CATALOGUE.get(n.type)) is not None
+        and any(p.role == "requester" and not p.oob for p in spec.ports)
+        and not any(p.role == "responder" for p in spec.ports)
+    ]
+    if len(roots) < 2:
+        return []
+
+    # Named *and* identified. Two chains often start at two nodes of the same
+    # type, and "Fingerprint probe, Fingerprint probe" says nothing about which
+    # one to remove.
+    def where(node: Node) -> str:
+        return "%s (%s)" % (node.name, node.id)
+
+    return [
+        Problem(
+            "two-chains",
+            "error",
+            "This graph has %d separate chains: %s. Plexus runs one at a time, "
+            "and would run the one starting at %s."
+            % (len(roots), ", ".join(where(n) for n in roots), where(roots[0])),
+            node_id=roots[1].id,
+        )
+    ]
 
 
 def chain(graph: Graph) -> list[Node]:
