@@ -84,6 +84,8 @@ sequence the probe sends.
 
 The checks panel should now say **Nothing to fix. This graph is ready to arm.**
 
+![A rig that will run, with no hardware in it](images/07-runnable-rig.png)
+
 ## 5. Run it
 
 Press **Run**.
@@ -197,7 +199,7 @@ runtime is one way to read it, and neither owns it.
 
 ## What to read next
 
-- **[The node reference](nodes.md)** — the other thirteen nodes.
+- **[The node reference](nodes.md)** — the other twelve nodes.
 - **[Running on hardware](hardware.md)** — when you want a real card.
 - **[What it refuses](security.md)** — why Open asks before it loads, and what
   the workspace is.

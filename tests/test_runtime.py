@@ -1251,3 +1251,21 @@ def test_a_probe_that_never_ran_says_nothing():
     from plexus.nodes.terminal import FingerprintProbe
 
     assert FingerprintProbe().summary() == []
+
+
+def test_an_injection_moment_the_catalogue_does_not_offer_is_refused():
+    """
+    Both hooks branch on this string, so anything the catalogue does not offer
+    matched neither: the node bound, passed traffic through and injected
+    nothing — indistinguishable from a trigger that never fired.
+    """
+    with pytest.raises(TransformError) as refused:
+        build_transform(
+            "inject", {"triggerIns": "AE", "apdu": "80CA9F1700", "when": "someday"}
+        )
+    assert "before_command" in str(refused.value)
+
+    for good in ("before_command", "after_response"):
+        build_transform(
+            "inject", {"triggerIns": "AE", "apdu": "80CA9F1700", "when": good}
+        )

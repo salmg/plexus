@@ -32,8 +32,6 @@ import yaml
 
 from plexus.catalogue import CATALOGUE, NodeType, Port
 
-Channel = Literal["apdu", "iso8583"]
-PortRole = Literal["requester", "responder"]
 ProblemLevel = Literal["error", "warning"]
 #: A rule of thumb, not a figure from a specification. Contactless kernels
 #: enforce a per-exchange timing budget; the exact number varies by kernel and
@@ -139,9 +137,6 @@ class Graph:
     @property
     def active(self) -> list[Node]:
         return [n for n in self.nodes if not n.disabled]
-
-    def edge_from(self, ref: PortRef) -> Edge | None:
-        return next((e for e in self.edges if e.source == ref), None)
 
     def touching(self, ref: PortRef) -> Iterator[Edge]:
         for edge in self.edges:

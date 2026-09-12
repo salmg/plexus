@@ -66,9 +66,6 @@ class NodeType:
     device: str | None = None
     caveats: tuple[str, ...] = ()
 
-    def field(self, key: str) -> Field | None:
-        return next((f for f in self.fields if f.key == key), None)
-
 
 class Catalogue:
     """Lazily loaded so importing this module never touches the disk."""
@@ -105,6 +102,9 @@ class Catalogue:
         return iter(self.types.values())
 
     def __len__(self) -> int:
+        # Nothing calls this today. It stays because `__iter__` is here:
+        # a type that can be iterated and cannot be measured is a container
+        # that behaves like one only half the time.
         return len(self.types)
 
 

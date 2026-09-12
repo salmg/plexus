@@ -10,6 +10,12 @@ Designed and provided by **[academy.salmg.net](https://academy.salmg.net)**.
 
 ![The editor with the example rig loaded](images/01-overview.png)
 
+It follows your system theme and the toggle in the top bar overrides it.
+The light palette is a set of blues rather than a washed-out version of
+the dark one; both were measured against WCAG on every surface they use.
+
+![The same rig in light mode](images/02-light-mode.png)
+
 ---
 
 ## Start here

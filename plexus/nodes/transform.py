@@ -236,6 +236,12 @@ class Inject(PassThrough):
     twice — free on contact, and enough to time a contactless tap out.
     """
 
+    #: The two moments an injection can happen. Checked, because the two
+    #: hooks branch on this string and anything else matched neither — the
+    #: node bound, passed traffic through and injected nothing, which is
+    #: indistinguishable from a trigger that never fired.
+    WHENS = ("before_command", "after_response")
+
     def __init__(
         self,
         trigger_ins: str,
@@ -247,6 +253,11 @@ class Inject(PassThrough):
     ) -> None:
         self.trigger = _one_byte(trigger_ins, "trigger INS")
         self.payload = _hex(apdu, "APDU to inject")
+        if when not in self.WHENS:
+            raise TransformError(
+                "When is one of %s; this one says %r."
+                % (", ".join(self.WHENS), when)
+            )
         self.when = when
         self.repeat = repeat
         self._execute = card_execute

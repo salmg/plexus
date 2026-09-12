@@ -1,8 +1,9 @@
 /**
  * Graphs the editor opens with, so a first run has something to read.
  *
- * These are the topologies atrium already supports, expressed in the node
- * model: the same palette, four different rigs.
+ * One for now — the contactless relay, which is the rig this project opens
+ * with. `examples/` in the repository holds the rest, including two that
+ * run with no hardware at all.
  */
 
 import type { PlexusGraph } from "./graph/types";

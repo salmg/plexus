@@ -33,10 +33,6 @@ class AtriumUnavailable(RuntimeError):
     """Atrium is not where it should be, or a piece of it will not import."""
 
 
-def atrium_path() -> Path:
-    return VENDOR
-
-
 @lru_cache(maxsize=1)
 def require_atrium() -> Path:
     """

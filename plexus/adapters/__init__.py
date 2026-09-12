@@ -12,7 +12,6 @@ that is never edited, so when it moves, the things that break are in here.
 
 from plexus.adapters.atrium import (  # noqa: F401
     AtriumUnavailable,
-    atrium_path,
     load_mutation_engine,
     load_recorded_card,
     require_atrium,
@@ -20,7 +19,6 @@ from plexus.adapters.atrium import (  # noqa: F401
 
 __all__ = [
     "AtriumUnavailable",
-    "atrium_path",
     "load_mutation_engine",
     "load_recorded_card",
     "require_atrium",
