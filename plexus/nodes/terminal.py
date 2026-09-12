@@ -14,7 +14,13 @@ software can do alone.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
+
+# `tlv_walk` and `find_all` live in `tlv.py`: the trace tap decodes the same
+# bytes this probe does, and one walker is the only way those two stay
+# describing the same card. Imported here rather than moved away from, so every
+# existing `from plexus.nodes.terminal import tlv_walk` still reads the same.
+from plexus.nodes.tlv import find_all, tlv_walk  # noqa: F401
 
 log = logging.getLogger(__name__)
 
@@ -23,60 +29,7 @@ class TerminalUnavailable(RuntimeError):
     """This terminal node cannot be bound here. User-facing, and says why."""
 
 
-# ── A little BER-TLV, enough to steer a probe ───────────────────────────────
-
-
-def tlv_walk(data: bytes) -> Iterator[Tuple[int, bytes]]:
-    """
-    Yield (tag, value) for every TLV in `data`, descending into constructed
-    ones.
-
-    Deliberately forgiving: a probe reads whatever a card chose to send, and
-    bailing out on the first surprising byte would lose the records before it.
-    Anything that does not parse is skipped rather than raised.
-    """
-    i = 0
-    end = len(data)
-    while i < end:
-        first = data[i]
-        if first in (0x00, 0xFF):  # padding between records
-            i += 1
-            continue
-
-        tag = first
-        i += 1
-        if first & 0x1F == 0x1F:  # multi-byte tag
-            while i < end:
-                tag = (tag << 8) | data[i]
-                more = data[i] & 0x80
-                i += 1
-                if not more:
-                    break
-
-        if i >= end:
-            return
-        length = data[i]
-        i += 1
-        if length & 0x80:
-            count = length & 0x7F
-            if count == 0 or i + count > end:
-                return
-            length = int.from_bytes(data[i : i + count], "big")
-            i += count
-
-        if i + length > end:
-            return
-        value = data[i : i + length]
-        i += length
-
-        yield tag, value
-        if first & 0x20:  # constructed
-            yield from tlv_walk(value)
-
-
-def find_all(data: bytes, tag: int) -> List[bytes]:
-    return [value for found, value in tlv_walk(data) if found == tag]
-
+# ── Reading a card's answers ──────────────────────────────────────────────
 
 SW_OK = b"\x90\x00"
 

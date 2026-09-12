@@ -14,6 +14,7 @@ than as silence.
 
 from __future__ import annotations
 
+import json
 import textwrap
 import time
 from pathlib import Path
@@ -24,6 +25,8 @@ from plexus.graph import Graph, PortRef, validate
 from plexus.nodes import terminal as terminal_nodes
 from plexus.nodes.card import CardUnavailable
 from plexus.nodes.terminal import find_all, gpo_for, read_records, tlv_walk
+from plexus.nodes.transform import Trace, TransformError
+from plexus.nodes.transform import build as build_transform
 from plexus.runtime import Engine, EngineError, node_implementations
 from plexus.runtime.events import Sink
 
@@ -1075,3 +1078,70 @@ def test_an_injection_with_no_line_counts_the_miss():
     node.on_response(bytes.fromhex("80A8000002830000"), b"\x90\x00")
     assert node.fired == 0
     assert node.skipped == 1
+
+
+# ── The trace tap's Detail field ────────────────────────────────────────────
+#
+# It was stored and never read: every trace was written raw whatever the
+# inspector said, while the node's own summary and docs/nodes.md both claimed
+# it decoded TLV. Three settings, three different lines.
+
+RECORD = "70145A0854133300123456785F24032512315F3401019000"
+
+
+def test_raw_writes_the_two_hex_strings_and_nothing_else():
+    line = Trace(detail="raw").line(bytes.fromhex("00B2010C00"), bytes.fromhex(RECORD))
+    assert line == {"cmd": "00B2010C00", "resp": RECORD}
+
+
+def test_tlv_decodes_the_response_and_descends_into_templates():
+    line = Trace(detail="tlv").line(bytes.fromhex("00B2010C00"), bytes.fromhex(RECORD))
+    assert [t["tag"] for t in line["tlv"]] == ["70", "5A", "5F24", "5F34"]
+    assert line["tlv"][1]["value"] == "5413330012345678"
+    # The status word is not TLV, so it is not decoded as if it were.
+    assert not any(t["tag"] == "90" for t in line["tlv"])
+    assert "name" not in line["tlv"][0]
+    assert "status" not in line
+
+
+def test_annotated_adds_the_names_and_what_the_status_word_means():
+    line = Trace(detail="annotated").line(
+        bytes.fromhex("00B2010C00"), bytes.fromhex(RECORD)
+    )
+    names = {t["tag"]: t.get("name") for t in line["tlv"]}
+    assert names["5A"] == "Application PAN"
+    assert names["5F34"] == "Application PAN Sequence Number"
+    assert line["status"] == {"sw": "9000", "meaning": "OK"}
+
+
+def test_a_status_word_that_is_not_ok_is_named_too():
+    line = Trace(detail="annotated").line(b"\x00\xb2\x01\x0c\x00", bytes.fromhex("6A82"))
+    assert line["status"]["meaning"] == "file or application not found"
+    assert "tlv" not in line, "two bytes of status word are not a record"
+
+
+def test_an_unknown_status_word_still_reports_its_hex():
+    line = Trace(detail="annotated").line(b"\x00\xb2\x01\x0c\x00", bytes.fromhex("6BFF"))
+    assert line["status"]["sw"] == "6BFF"
+
+
+def test_a_detail_this_build_does_not_know_is_refused():
+    """The inspector offers three; a graph is untrusted input and can say
+    anything."""
+    with pytest.raises(TransformError):
+        Trace(detail="verbose")
+
+
+def test_the_detail_setting_reaches_the_file(tmp_path, monkeypatch):
+    """End to end, because `line` being right is not the same as it being
+    called."""
+    monkeypatch.setenv("PLEXUS_WORKSPACE", str(tmp_path))
+    node = build_transform(
+        "trace", {"detail": "annotated", "path": "out.jsonl"}
+    )
+    node.on_response(bytes.fromhex("00B2010C00"), bytes.fromhex(RECORD))
+    node.close()
+
+    written = json.loads((tmp_path / "out.jsonl").read_text(encoding="utf-8").strip())
+    assert written["status"]["meaning"] == "OK"
+    assert any(t.get("name") == "Application PAN" for t in written["tlv"])

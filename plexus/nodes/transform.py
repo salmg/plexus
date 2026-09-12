@@ -19,6 +19,8 @@ import yaml
 
 from plexus.adapters import load_mutation_engine
 from plexus.nodes.paths import resolve_write
+from plexus.nodes.tlv import decode as tlv_decode
+from plexus.nodes.tlv import status_word
 
 log = logging.getLogger(__name__)
 
@@ -55,9 +57,27 @@ class Trace(PassThrough):
 
     The file is opened once and flushed per line: a trace that is buffered when
     the process is killed is a trace of the part you did not need.
+
+    `detail` decides how much goes in each line:
+
+        raw        the two hex strings, and nothing else
+        tlv        plus every TLV in the response, flattened
+        annotated  plus the name of each tag this build knows, and what the
+                   status word means
+
+    It was stored and never read — every trace was `raw`, whatever the
+    inspector said, while the node's own summary and docs/nodes.md both claimed
+    it decoded TLV.
     """
 
+    DETAILS = ("raw", "tlv", "annotated")
+
     def __init__(self, path: Optional[str] = None, detail: str = "tlv") -> None:
+        if detail not in self.DETAILS:
+            raise TransformError(
+                "Detail is one of %s; this one says %r."
+                % (", ".join(self.DETAILS), detail)
+            )
         self.detail = detail
         self.seen = 0
         self._handle = None
@@ -69,18 +89,32 @@ class Trace(PassThrough):
             self.path = resolve_write(path, what="trace")
             self._handle = self.path.open("a", encoding="utf-8")
 
+    def line(self, command: bytes, response: bytes) -> Dict[str, Any]:
+        """One trace entry. Separate from writing it, so it can be tested."""
+        entry: Dict[str, Any] = {
+            "cmd": command.hex().upper(),
+            "resp": response.hex().upper(),
+        }
+        if self.detail == "raw":
+            return entry
+
+        named = self.detail == "annotated"
+        # The status word is not part of the TLV, so it is decoded separately
+        # and the body is what is left.
+        body = response[:-2] if len(response) >= 2 else b""
+        decoded = tlv_decode(body, named=named)
+        if decoded:
+            entry["tlv"] = decoded
+        if named:
+            status = status_word(response)
+            if status:
+                entry["status"] = status
+        return entry
+
     def on_response(self, command: bytes, response: bytes) -> bytes:
         self.seen += 1
         if self._handle is not None:
-            self._handle.write(
-                json.dumps(
-                    {
-                        "cmd": command.hex().upper(),
-                        "resp": response.hex().upper(),
-                    }
-                )
-                + "\n"
-            )
+            self._handle.write(json.dumps(self.line(command, response)) + "\n")
             self._handle.flush()
         return response
 

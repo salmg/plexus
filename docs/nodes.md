@@ -88,12 +88,34 @@ nothing is. Plexus parses it first.
 
 ### Trace tap
 
-Decodes TLV and records the exchange. Changes nothing.
+Records the exchange and changes nothing.
 
 | Field | |
 |---|---|
 | Detail | `raw` · `tlv` · `annotated` |
 | Write to | a path **inside the workspace** — see [What it refuses](security.md) |
+
+One JSON object per exchange, flushed as it is written — a trace still buffered
+when the process is killed is a trace of the part you did not need.
+
+What `Detail` puts in each line:
+
+| | |
+|---|---|
+| `raw` | the command and the response, as hex |
+| `tlv` | plus every TLV in the response, flattened, descending into templates |
+| `annotated` | plus the name of each tag this build knows, and what the status word means |
+
+```json
+{"cmd": "00B2010C00",
+ "resp": "70145A08...9000",
+ "tlv": [{"tag": "5A", "value": "5413330012345678", "name": "Application PAN"}],
+ "status": {"sw": "9000", "meaning": "OK"}}
+```
+
+The tag table is deliberately not exhaustive — it is the set a relay actually
+turns up, because a half-remembered name is worse than none. A tag that is not
+in it keeps its hex.
 
 ### Injection
 
