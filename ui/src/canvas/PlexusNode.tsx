@@ -31,7 +31,7 @@ export interface PlexusNodeData extends Record<string, unknown> {
  * bounds from the first frame.  Keep these two numbers and the CSS in step.
  */
 export const NODE_WIDTH = 184;
-export const NODE_HEIGHT = 100;
+export const NODE_HEIGHT = 112;
 
 const STATUS_CLASS: Record<NodeTelemetry["status"], string> = {
   idle: "",

@@ -22,7 +22,12 @@ export type Theme = "dark" | "light";
 
 interface GraphState {
   graph: PlexusGraph;
-  selection: string | null;
+  /**
+   * Selected node ids, in the order they were picked.  A list rather than one
+   * id because a rig is built and rearranged in groups: box three nodes, drag
+   * them somewhere sensible, delete the two that were a false start.
+   */
+  selection: string[];
   devices: Device[];
   theme: Theme;
   dirty: boolean;
@@ -35,6 +40,9 @@ interface GraphState {
   setDevices: (devices: Device[]) => void;
   setTheme: (theme: Theme) => void;
   select: (id: string | null) => void;
+  /** Apply React Flow's per-node select changes, keeping pick order. */
+  applySelection: (changes: { id: string; selected: boolean }[]) => void;
+  selectAll: () => void;
 
   addNode: (typeKey: string, at: { x: number; y: number }) => string;
   moveNode: (id: string, at: { x: number; y: number }, commit: boolean) => void;
@@ -43,6 +51,8 @@ interface GraphState {
   setNodeHost: (id: string, host: string) => void;
   toggleDisabled: (id: string) => void;
   removeNode: (id: string) => void;
+  removeNodes: (ids: string[]) => void;
+  nudge: (ids: string[], dx: number, dy: number) => void;
 
   connect: (from: PortRef, to: PortRef) => void;
   disconnect: (edgeId: string) => void;
@@ -71,7 +81,7 @@ export const useGraph = create<GraphState>((set, get) => {
 
   return {
     graph: emptyGraph(),
-    selection: null,
+    selection: [],
     devices: [],
     theme: "dark",
     dirty: false,
@@ -81,7 +91,7 @@ export const useGraph = create<GraphState>((set, get) => {
     setGraph: (graph, opts) =>
       set({
         graph,
-        selection: null,
+        selection: [],
         past: [],
         future: [],
         dirty: opts?.clean ? false : true,
@@ -90,7 +100,26 @@ export const useGraph = create<GraphState>((set, get) => {
     setName: (name) => edit((g) => ({ ...g, name })),
     setDevices: (devices) => set({ devices }),
     setTheme: (theme) => set({ theme }),
-    select: (id) => set({ selection: id }),
+    select: (id) => set({ selection: id === null ? [] : [id] }),
+
+    applySelection: (changes) =>
+      set((state) => {
+        const next = state.selection.filter(
+          (id) => !changes.some((c) => c.id === id && !c.selected),
+        );
+        for (const change of changes) {
+          if (change.selected && !next.includes(change.id)) next.push(change.id);
+        }
+        // Same members in the same order means nothing to publish; without this
+        // every pointer move over the canvas would re-render every node.
+        const unchanged =
+          next.length === state.selection.length &&
+          next.every((id, i) => state.selection[i] === id);
+        return unchanged ? state : { selection: next };
+      }),
+
+    selectAll: () =>
+      set((state) => ({ selection: state.graph.nodes.map((n) => n.id) })),
 
     addNode: (typeKey, at) => {
       const type = requireNodeType(typeKey);
@@ -102,7 +131,7 @@ export const useGraph = create<GraphState>((set, get) => {
         config: defaultConfig(type),
       };
       edit((g) => ({ ...g, nodes: [...g.nodes, node] }));
-      set({ selection: id });
+      set({ selection: [id] });
       return id;
     },
 
@@ -148,13 +177,34 @@ export const useGraph = create<GraphState>((set, get) => {
         ),
       })),
 
-    removeNode: (id) => {
+    removeNode: (id) => get().removeNodes([id]),
+
+    removeNodes: (ids) => {
+      if (ids.length === 0) return;
+      const gone = new Set(ids);
       edit((g) => ({
         ...g,
-        nodes: g.nodes.filter((n) => n.id !== id),
-        edges: g.edges.filter((e) => e.from.node !== id && e.to.node !== id),
+        nodes: g.nodes.filter((n) => !gone.has(n.id)),
+        // An edge with one end deleted is not an edge; drop it with the node
+        // rather than leaving a wire attached to nothing.
+        edges: g.edges.filter(
+          (e) => !gone.has(e.from.node) && !gone.has(e.to.node),
+        ),
       }));
-      if (get().selection === id) set({ selection: null });
+      set((state) => ({ selection: state.selection.filter((id) => !gone.has(id)) }));
+    },
+
+    nudge: (ids, dx, dy) => {
+      if (ids.length === 0) return;
+      const moving = new Set(ids);
+      edit((g) => ({
+        ...g,
+        nodes: g.nodes.map((n) =>
+          moving.has(n.id)
+            ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
+            : n,
+        ),
+      }));
     },
 
     connect: (from, to) =>

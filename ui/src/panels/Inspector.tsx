@@ -6,6 +6,8 @@
  * working editor, which is the whole reason the catalogue is data.
  */
 
+import { useMemo } from "react";
+
 import { nodeType } from "../catalogue";
 import type { FieldSpec } from "../catalogue/types";
 import { chainLatency } from "../graph/validate";
@@ -20,16 +22,97 @@ interface InspectorProps {
 
 export function Inspector({ problems }: InspectorProps) {
   const selection = useGraph((s) => s.selection);
-  const node = useGraph((s) => s.graph.nodes.find((n) => n.id === s.selection));
+  const nodes = useGraph((s) => s.graph.nodes);
+
+  const selected = useMemo(
+    () => nodes.filter((n) => selection.includes(n.id)),
+    [nodes, selection],
+  );
 
   return (
     <aside className="rail rail--right" aria-label="Inspector">
-      {node ? (
-        <NodeInspector node={node} problems={problems.filter((p) => p.nodeId === node.id)} />
+      {selected.length === 1 ? (
+        <NodeInspector
+          node={selected[0]}
+          problems={problems.filter((p) => p.nodeId === selected[0].id)}
+        />
+      ) : selected.length > 1 ? (
+        <MultiInspector nodes={selected} problems={problems} />
       ) : (
-        <GraphInspector problems={problems} hasSelection={selection !== null} />
+        <GraphInspector problems={problems} hasSelection={false} />
       )}
     </aside>
+  );
+}
+
+/* ── Several selected ───────────────────────────────────────────────────── */
+
+function MultiInspector({
+  nodes,
+  problems,
+}: {
+  nodes: PlexusNode[];
+  problems: Problem[];
+}) {
+  const removeNodes = useGraph((s) => s.removeNodes);
+  const toggleDisabled = useGraph((s) => s.toggleDisabled);
+  const select = useGraph((s) => s.select);
+
+  const ids = nodes.map((n) => n.id);
+  const allDisabled = nodes.every((n) => n.disabled);
+  const mine = problems.filter((p) => p.nodeId && ids.includes(p.nodeId));
+
+  return (
+    <>
+      <div className="panel-head">
+        <span>{nodes.length} nodes</span>
+        <button
+          type="button"
+          className="btn btn--ghost btn--icon"
+          onClick={() => select(null)}
+          aria-label="Clear the selection"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="rail__scroll">
+        <div className="panel-section">
+          <p className="inspector__summary">
+            Drag any one of them to move the group. Delete removes their wires too.
+          </p>
+          <ul className="selected-list">
+            {nodes.map((n) => (
+              <li key={n.id}>
+                <button type="button" onClick={() => select(n.id)}>
+                  <span>{n.label || nodeType(n.type)?.title || n.type}</span>
+                  <code>{n.id}</code>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {mine.length > 0 && <ProblemList problems={mine} onPick={select} />}
+
+        <div className="panel-section inspector__actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => ids.forEach((id) => toggleDisabled(id))}
+          >
+            {allDisabled ? "Enable all" : "Disable all"}
+          </button>
+          <button
+            type="button"
+            className="btn btn--danger"
+            onClick={() => removeNodes(ids)}
+          >
+            Delete {nodes.length}
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 

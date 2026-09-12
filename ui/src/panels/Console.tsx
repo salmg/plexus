@@ -18,7 +18,10 @@ import { FitAddon } from "@xterm/addon-fit";
 import type { ApduEvent, LogLine } from "../graph/types";
 import { useRuntime } from "../store/useRuntime";
 
-const PROMPT = "\x1b[38;5;79mplexus\x1b[0m\x1b[2m>\x1b[0m ";
+// The four colours below are ANSI slots, not literal colours, and the theme
+// below maps each slot onto a token — so the prompt is green on the dark ground
+// and blue on the light one without this file knowing either.
+const PROMPT = "\x1b[32mplexus\x1b[0m\x1b[2m>\x1b[0m ";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 const RED = "\x1b[31m";
@@ -29,11 +32,20 @@ function themeFromCss(): Record<string, string> {
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
   };
+  const accent = read("--accent", "#46d9a8");
   return {
     background: read("--surface-sunken", "#0e1116"),
     foreground: read("--text", "#dfe5ee"),
-    cursor: read("--accent", "#46d9a8"),
+    cursor: accent,
     selectionBackground: read("--accent-wash", "rgba(70,217,168,0.25)"),
+    green: accent,
+    brightGreen: accent,
+    red: read("--danger", "#e5534b"),
+    brightRed: read("--danger", "#e5534b"),
+    yellow: read("--warn", "#e0a145"),
+    brightYellow: read("--warn", "#e0a145"),
+    blue: read("--port-card", "#e0a145"),
+    cyan: read("--port-terminal", "#3fb6c4"),
   };
 }
 
@@ -64,7 +76,7 @@ export function Console() {
       fontFamily: getComputedStyle(document.documentElement)
         .getPropertyValue("--font-mono")
         .trim(),
-      fontSize: 11.5,
+      fontSize: 12.5,
       lineHeight: 1.35,
       cursorBlink: true,
       convertEol: true,

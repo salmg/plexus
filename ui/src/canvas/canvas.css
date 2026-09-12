@@ -28,7 +28,7 @@
 .react-flow__attribution {
   background: transparent;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .react-flow__attribution a {
@@ -77,7 +77,7 @@
 .pnode {
   position: relative;
   width: 184px;
-  height: 100px;
+  height: 112px;
   overflow: hidden;
   padding: 8px 10px 9px;
   background: var(--surface);
@@ -140,7 +140,7 @@
 }
 
 .pnode__title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text);
   overflow: hidden;
@@ -150,7 +150,7 @@
 
 .pnode__id {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 10.5px;
   letter-spacing: 0.03em;
   color: var(--text-faint);
   margin-top: 1px;
@@ -164,7 +164,7 @@
 
 .pnode__bind {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -180,7 +180,7 @@
   gap: 8px;
   margin-top: 3px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--ok);
 }
 
@@ -228,7 +228,7 @@
 
 .pport__label {
   position: absolute;
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.03em;
   color: var(--text-faint);
   pointer-events: none;
@@ -279,7 +279,7 @@
 
 .react-flow__edge-text {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   fill: var(--text-dim);
 }
 
@@ -293,6 +293,81 @@
 
 .react-flow__handle-valid {
   box-shadow: 0 0 0 3px var(--ok-wash);
+}
+
+/* ── Selection box ────────────────────────────────────────────────────── */
+
+.react-flow__selection {
+  background: var(--accent-wash);
+  border: 1px solid var(--accent);
+}
+
+.react-flow__nodesselection-rect {
+  background: var(--accent-wash);
+  border: 1px solid var(--accent);
+}
+
+/* ── Tool strip ───────────────────────────────────────────────────────── */
+
+.tools {
+  display: flex;
+  gap: 8px;
+  margin: 8px;
+}
+
+.tools__group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+}
+
+.tools__group--selection {
+  padding-left: 8px;
+}
+
+.tools__count {
+  margin-right: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.tools__btn {
+  height: 22px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tools__btn:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.tools__btn.is-on {
+  color: var(--text-inverse);
+  background: var(--accent);
+}
+
+.tools__btn--danger {
+  color: var(--danger);
+}
+
+.tools__btn--danger:hover {
+  color: var(--danger);
+  background: var(--danger-wash);
 }
 
 /* ── Canvas overlays ──────────────────────────────────────────────────── */
@@ -310,11 +385,11 @@
 
 .canvas__hint p {
   margin: 0 0 6px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .canvas__hint-sub {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
   color: var(--text-faint);
 }
@@ -327,7 +402,7 @@
   z-index: 6;
   max-width: 460px;
   padding: 7px 12px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--danger);
   background: var(--surface-raised);
   border: 1px solid var(--danger);

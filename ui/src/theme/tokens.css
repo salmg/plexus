@@ -30,7 +30,10 @@
 
   --text: #dfe5ee;
   --text-dim: #909cae;
-  --text-faint: #5d6878;
+  /* Faint is still the quietest text, but it labels ports and node ids at
+   * 10–11px, so it clears 4.5:1 on every surface it lands on rather than
+   * fading into the ground. */
+  --text-faint: #7d8b9e;
   --text-inverse: #0b0d10;
 
   --accent: #46d9a8;
@@ -59,58 +62,73 @@
   --shadow-panel: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
+/*
+ * Light mode is built from blues rather than one accent hue: royal for
+ * anything the tool itself does, azure for the side of an edge that asks,
+ * cerulean for the side that answers, blue-violet for traffic that leaves the
+ * conversation.  They are far enough apart to tell at a glance and close enough
+ * to read as one family.
+ *
+ * Red and amber stay red and amber.  An error that is blue is an error nobody
+ * reads as one, and the two ports are separated by position as well as hue, so
+ * the family costs nothing there.
+ */
 [data-theme="light"] {
   color-scheme: light;
 
-  --canvas-bg: #f4f6f8;
-  --canvas-grid: #e3e7ec;
-  --canvas-grid-major: #d5dbe3;
+  --canvas-bg: #f2f6fc;
+  --canvas-grid: #dee8f6;
+  --canvas-grid-major: #c9dbf0;
 
   --surface: #ffffff;
   --surface-raised: #ffffff;
-  --surface-sunken: #eef1f5;
-  --surface-hover: #f0f3f7;
+  --surface-sunken: #eaf1fa;
+  --surface-hover: #e7f0fb;
 
-  --border: #d9dee6;
-  --border-strong: #bcc5d1;
-  --border-focus: #0d8f6b;
+  --border: #ccdcee;
+  --border-strong: #a5bedc;
+  --border-focus: #1e4fbf;
 
-  --text: #161a20;
-  --text-dim: #59626f;
-  --text-faint: #8b94a2;
+  --text: #0f1d33;
+  --text-dim: #44597b;
+  --text-faint: #5c6e85;
   --text-inverse: #ffffff;
 
-  --accent: #0d8f6b;
-  --accent-dim: #8fd0bb;
-  --accent-wash: rgba(13, 143, 107, 0.1);
+  --accent: #1e4fbf;
+  --accent-dim: #93aee4;
+  --accent-wash: rgba(30, 79, 191, 0.1);
 
-  --port-card: #b1731a;
-  --port-card-wash: rgba(177, 115, 26, 0.12);
-  --port-terminal: #14707d;
-  --port-terminal-wash: rgba(20, 112, 125, 0.12);
-  --port-iso: #6f4fa8;
-  --port-iso-wash: rgba(111, 79, 168, 0.12);
+  --port-card: #1c7fce;
+  --port-card-wash: rgba(28, 127, 206, 0.14);
+  --port-terminal: #0f6f8c;
+  --port-terminal-wash: rgba(15, 111, 140, 0.14);
+  --port-iso: #6355ce;
+  --port-iso-wash: rgba(99, 85, 206, 0.14);
 
-  --edge: #aeb7c3;
-  --edge-live: #0d8f6b;
-  --edge-invalid: #c33b32;
-  --edge-oob: #6f4fa8;
+  --edge: #9db4d2;
+  --edge-live: #1e4fbf;
+  --edge-invalid: #c23a2f;
+  --edge-oob: #6355ce;
 
-  --ok: #0d8f6b;
-  --warn: #b1731a;
-  --danger: #c33b32;
-  --ok-wash: rgba(13, 143, 107, 0.1);
-  --warn-wash: rgba(177, 115, 26, 0.1);
-  --danger-wash: rgba(195, 59, 50, 0.1);
+  --ok: #1e4fbf;
+  --warn: #a1660f;
+  --danger: #c23a2f;
+  --ok-wash: rgba(30, 79, 191, 0.1);
+  --warn-wash: rgba(161, 102, 15, 0.12);
+  --danger-wash: rgba(194, 58, 47, 0.1);
 
-  --shadow-panel: 0 1px 3px rgba(20, 30, 45, 0.1);
+  --shadow-panel: 0 1px 3px rgba(18, 39, 74, 0.12);
 }
 
+/*
+ * Plain, widely installed faces on purpose.  No downloaded font, no variable
+ * grotesque: this is a tool for reading hex and short labels for hours, and the
+ * faces below are the ones every machine already renders well at 11px.
+ */
 :root {
-  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono",
-    Menlo, Consolas, "Liberation Mono", monospace;
+  --font-ui: "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: Consolas, "SF Mono", Menlo, "DejaVu Sans Mono", "Courier New",
+    monospace;
 
   --radius: 6px;
   --radius-lg: 10px;

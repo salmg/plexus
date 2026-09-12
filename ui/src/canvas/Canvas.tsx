@@ -17,7 +17,9 @@ import {
   BackgroundVariant,
   Controls,
   MiniMap,
+  Panel,
   ReactFlow,
+  SelectionMode,
   useReactFlow,
 } from "@xyflow/react";
 import type { Connection, Edge, Node, NodeChange } from "@xyflow/react";
@@ -42,9 +44,10 @@ export function Canvas({ problems }: CanvasProps) {
   const graph = useGraph((s) => s.graph);
   const selection = useGraph((s) => s.selection);
   const select = useGraph((s) => s.select);
+  const applySelection = useGraph((s) => s.applySelection);
   const addNode = useGraph((s) => s.addNode);
   const moveNode = useGraph((s) => s.moveNode);
-  const removeNode = useGraph((s) => s.removeNode);
+  const removeNodes = useGraph((s) => s.removeNodes);
   const connect = useGraph((s) => s.connect);
   const disconnect = useGraph((s) => s.disconnect);
   const edgeTelemetry = useRuntime((s) => s.edges);
@@ -55,6 +58,18 @@ export function Canvas({ problems }: CanvasProps) {
   const refusalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wrapper = useRef<HTMLDivElement | null>(null);
   const fitted = useRef(false);
+
+  /**
+   * Which tool the left mouse button holds.
+   *
+   * React Flow's stock arrangement asks for Shift to draw a selection box,
+   * which is fine until you are rearranging a rig with one hand.  Select mode
+   * puts the box on a plain drag and moves panning to the middle and right
+   * buttons, so a group can be boxed, dragged and deleted without touching the
+   * keyboard.  Pan mode is the default because that is what a canvas usually
+   * does when you grab it.
+   */
+  const [mode, setMode] = useState<"pan" | "select">("pan");
 
   /**
    * Fit the graph once, when there is something to fit it into.
@@ -131,7 +146,7 @@ export function Canvas({ problems }: CanvasProps) {
         position: n.position,
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
-        selected: n.id === selection,
+        selected: selection.includes(n.id),
         data: { nodeId: n.id },
         className: problemByNode.get(n.id)?.level === "error" ? "has-error" : undefined,
       })),
@@ -194,17 +209,25 @@ export function Canvas({ problems }: CanvasProps) {
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<PlexusNodeData>>[]) => {
+      const removed: string[] = [];
+      const selects: { id: string; selected: boolean }[] = [];
+
       for (const change of changes) {
         if (change.type === "position" && change.position) {
+          // Dragging a group emits one of these per node, every frame.
           moveNode(change.id, change.position, change.dragging === false);
         } else if (change.type === "remove") {
-          removeNode(change.id);
-        } else if (change.type === "select" && change.selected) {
-          select(change.id);
+          removed.push(change.id);
+        } else if (change.type === "select") {
+          selects.push({ id: change.id, selected: change.selected });
         }
       }
+
+      // Batched: deleting six nodes should be one undo step, not six.
+      if (selects.length) applySelection(selects);
+      if (removed.length) removeNodes(removed);
     },
-    [moveNode, removeNode, select],
+    [moveNode, removeNodes, applySelection],
   );
 
   const onEdgesDelete = useCallback(
@@ -251,6 +274,11 @@ export function Canvas({ problems }: CanvasProps) {
         minZoom={0.25}
         maxZoom={2}
         deleteKeyCode={["Backspace", "Delete"]}
+        selectionOnDrag={mode === "select"}
+        panOnDrag={mode === "select" ? [1, 2] : true}
+        selectionMode={SelectionMode.Partial}
+        selectNodesOnDrag={false}
+        multiSelectionKeyCode={["Meta", "Control", "Shift"]}
       >
         <Background
           variant={BackgroundVariant.Dots}
@@ -260,6 +288,53 @@ export function Canvas({ problems }: CanvasProps) {
         />
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable ariaLabel="Graph overview" />
+
+        <Panel position="top-left" className="tools">
+          <div className="tools__group" role="group" aria-label="Mouse tool">
+            <button
+              type="button"
+              className={`tools__btn${mode === "pan" ? " is-on" : ""}`}
+              onClick={() => setMode("pan")}
+              aria-pressed={mode === "pan"}
+              title="Drag the canvas to pan"
+            >
+              Pan
+            </button>
+            <button
+              type="button"
+              className={`tools__btn${mode === "select" ? " is-on" : ""}`}
+              onClick={() => setMode("select")}
+              aria-pressed={mode === "select"}
+              title="Drag a box to select nodes. Middle or right button still pans."
+            >
+              Select
+            </button>
+          </div>
+
+          {selection.length > 0 && (
+            <div className="tools__group tools__group--selection">
+              <span className="tools__count">
+                {selection.length} selected
+              </span>
+              <button
+                type="button"
+                className="tools__btn tools__btn--danger"
+                onClick={() => removeNodes(selection)}
+                title="Delete the selected nodes"
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                className="tools__btn"
+                onClick={() => select(null)}
+                title="Clear the selection"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+        </Panel>
       </ReactFlow>
 
       {graph.nodes.length === 0 && (
