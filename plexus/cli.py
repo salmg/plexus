@@ -82,14 +82,26 @@ def _show(graph: Graph) -> int:
         host = f"  @{node.host}" if node.host else ""
         print(f"  {'└─' if i == len(steps) - 1 else '├─'} {node.name}  ({node.type}, {cost}){host}")
 
-    print(f"\n  {chain_latency(graph, steps[0].id)} ms per exchange, expected.")
+    one_way = chain_latency(graph, steps[0].id)
+    print(f"\n  {one_way} ms each way, {one_way * 2} ms out and back.")
     return 0
+
+
+#: "requester" and "responder" share a first letter, so the short form has to
+#: say what the role does rather than abbreviate what it is called.
+_ROLE = {"requester": "asks", "responder": "answers"}
 
 
 def _nodes() -> int:
     for node_type in sorted(CATALOGUE, key=lambda t: (t.node_class, t.key)):
-        ports = " ".join(f"{p.label}:{p.role[0]}" for p in node_type.ports)
-        print(f"{node_type.key:<18} {node_type.node_class:<10} {ports:<24} {node_type.title}")
+        # An out-of-band port's own label already says so; no second marker.
+        ports = " ".join(
+            "%s(%s)" % (p.label, _ROLE.get(p.role, p.role)) for p in node_type.ports
+        )
+        print(
+            f"{node_type.key:<18} {node_type.node_class:<10} "
+            f"{ports:<34} {node_type.title}"
+        )
     return 0
 
 

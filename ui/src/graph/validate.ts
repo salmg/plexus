@@ -27,13 +27,24 @@ export interface Problem {
 }
 
 /**
- * A rule of thumb, not a figure from a specification.  Contactless kernels
+ * Rules of thumb, not figures from a specification.  Contactless kernels
  * enforce a per-exchange timing budget; the exact number varies by kernel and
- * is not something this tool can know.  These thresholds exist so a graph that
- * is obviously too slow says so before hardware is plugged in.
+ * is not something this tool can know.  These exist so a graph that is
+ * obviously too slow says so before hardware is plugged in.
+ *
+ * Compared against the *round trip* — a command out and a response back —
+ * because that is the interval a terminal actually times.  The first version
+ * compared the one-way sum against 120 ms, which no graph anyone could draw
+ * ever reached: the dearest chain the catalogue allows is 43 ms one way, so the
+ * check could not fire and was worse than no check at all.
+ *
+ * Known simplification: an injection node is counted at its own small cost, not
+ * at the extra round trip it really spends reaching the card out of band.
+ *
+ * Keep these in step with `plexus/graph.py`.
  */
-export const TAP_BUDGET_WARN_MS = 120;
-export const TAP_BUDGET_FAIL_MS = 300;
+export const TAP_BUDGET_WARN_MS = 60;
+export const TAP_BUDGET_FAIL_MS = 150;
 
 const CONTACTLESS_TERMINALS = new Set(["acr122u.target"]);
 
@@ -321,20 +332,21 @@ function problemsFromTiming(
   for (const node of active) {
     if (!CONTACTLESS_TERMINALS.has(node.type)) continue;
 
-    const ms = chainLatency(graph, node.id);
+    // Out and back: the interval the terminal times, not the one-way sum.
+    const ms = chainLatency(graph, node.id) * 2;
     if (ms >= TAP_BUDGET_FAIL_MS) {
       out.push({
         code: "tap-budget",
         level: "error",
         nodeId: node.id,
-        message: `This chain is about ${ms} ms per exchange. A contactless kernel will abandon the transaction well before that.`,
+        message: `About ${ms} ms per exchange, out and back. A contactless kernel will abandon the transaction well before that.`,
       });
     } else if (ms >= TAP_BUDGET_WARN_MS) {
       out.push({
         code: "tap-budget",
         level: "warning",
         nodeId: node.id,
-        message: `About ${ms} ms per exchange. Close to what a contactless kernel will tolerate — expect dropped taps.`,
+        message: `About ${ms} ms per exchange, out and back. Close to what a contactless kernel will tolerate — expect dropped taps.`,
       });
     }
   }

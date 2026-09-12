@@ -104,9 +104,29 @@ The graph model and the checks also run headless, with only PyYAML installed:
 
 ```bash
 pip install -e .
-plexus check relay.plexus.yaml
-plexus show  relay.plexus.yaml
+plexus check examples/contactless-relay.plexus.yaml
+plexus show  examples/contactless-relay.plexus.yaml
 plexus nodes
+```
+
+`show` prints the chain and what it is expected to cost:
+
+```
+contactless relay to a phone
+
+  ├─ ACR122U target  (acr122u.target, 6 ms)  @workbench
+  ├─ Trace tap  (trace, 0 ms)  @workbench
+  ├─ CVM bypass  (mutation, 1 ms)  @workbench
+  └─ NFCGate session  (nfcgate, 35 ms)  @phone
+
+  42 ms each way, 84 ms out and back.
+```
+
+Tests:
+
+```bash
+pip install -e ".[dev]"
+pytest
 ```
 
 ## Layout
@@ -153,13 +173,26 @@ an atrium playbook — the files in `vendor/atrium/playbooks/` paste in unchange
 Being straight about the line:
 
 - **The Python runtime.** The graph model, the checks, the catalogue loader and
-  the CLI are written; the engine that binds hardware and moves APDUs is not.
-  It needs the rig, not a laptop.
+  the CLI are written, tested and run; the engine that binds hardware and moves
+  APDUs is not. That part needs the rig, not a laptop.
 - **The atrium adapters.** `plexus/adapters/` does not exist yet. The seams it
   will attach to are named above.
 - **Host-layer nodes.** ISO 8583 is a second channel in the model (`iso8583`)
   with no nodes on it yet. The interesting one is a DE55 bridge, where the two
   halves atrium describes actually meet.
-- **Nothing Python here has been executed.** It was written on a Windows
-  machine with no Python installed. The TypeScript is typechecked, linted,
-  built and driven in a browser; the Python is not.
+
+### The two implementations have to agree
+
+The editor and the runtime apply the same rules to the same graph, in different
+languages. `tests/test_graph.py` pins the places where that agreement is
+observable — the example rig's 84 ms round trip, its two warnings, the chain
+order — so a change to one side that quietly disagrees with the other fails a
+test rather than surfacing as a graph that draws fine and runs differently.
+
+One case is worth keeping: `test_the_thresholds_are_reachable_by_a_graph_someone_could_draw`
+is a regression on a check that did nothing. The contactless timing thresholds
+were first compared against the one-way sum at 120/300 ms, while the dearest
+chain the catalogue allows is 43 ms one way — so the warning could never fire
+and the error needed 79 stacked mutation nodes. They now measure the round trip
+against 60/150 ms, and the test fails if the catalogue ever drifts back out of
+their reach.
