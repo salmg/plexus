@@ -241,7 +241,7 @@ const esCatalogue: Record<string, string> = {
   "node.simtrace2.summary":
     "Presenta una tarjeta virtual a un terminal real por la interfaz de contactos.",
   "node.simtrace2.caveat.0":
-    "El demonio se ejecuta fuera de Plexus. Este nodo comprueba que esté levantado y se conecta a él.",
+    "El demonio se ejecuta fuera de Plexus; se arranca a mano en una shell de root. Plexus nunca lo lanza.",
   "field.simtrace2.device.label": "Dispositivo",
   "field.simtrace2.assertOnly.label": "No empezar si el demonio no está ya levantado",
   "field.simtrace2.assertOnly.help":

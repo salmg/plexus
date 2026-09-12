@@ -33,6 +33,11 @@ A probe is not trying to be approved; it is trying to get a well-formed answer.
 
 ### ACR122U target · needs pyscard, an ACR122U, and atrium's PN532 emulator
 
+| Field | |
+|---|---|
+| Reader | which ACR122U, when more than one is attached |
+| Offer long responses as 61 XX | split a response the frame cannot carry, and let the terminal ask for the rest |
+
 Emulates a contactless card to a terminal in whose field it sits.
 
 Worth knowing, all three from atrium's own measurements:
@@ -48,6 +53,11 @@ Worth knowing, all three from atrium's own measurements:
 
 ### SimTrace2 · needs a SimTrace2 and `simtrace2-remsim` in a root shell
 
+| Field | |
+|---|---|
+| Device | which SimTrace2, when more than one is attached |
+| Refuse to start if the daemon is not already up | the only safe default: the alternative is Plexus launching a root process |
+
 Presents a virtual card to a real terminal over the contact interface.
 
 The daemon needs raw USB access and is started by hand. **Plexus never launches
@@ -59,10 +69,21 @@ This node checks it is up and binds to it.
 
 Presents a card to anything on this machine that speaks PC/SC.
 
+| Field | |
+|---|---|
+| vpcd host | where vpcd is listening — `127.0.0.1` unless you moved it |
+| vpcd port | its port, `35963` by default |
+
 ### EMV agent · needs a configured model back end
 
 A synthetic terminal: the model writes its own commands and reads the answers.
 It drives the card on its own — point it at a card you own.
+
+| Field | |
+|---|---|
+| Task | what to ask it to find out, in a sentence |
+| Model | which back end answers |
+| Brute-force SFI range | sweep every short file identifier rather than only what the AFL points at |
 
 ---
 
@@ -80,6 +101,11 @@ atrium's own format, and files in `vendor/atrium/playbooks/` paste in unchanged.
 The playbook is config on the node rather than a path, because the graph is the
 document — a rig you hand someone should not depend on a YAML file beside it
 that they do not have.
+
+| Field | |
+|---|---|
+| Playbook | atrium's rules, in its own YAML. Existing playbooks paste in unchanged |
+| Log every rewrite | writes each one to the playbook's `log_path`, inside the workspace |
 
 A playbook that does not parse **stops the arm**. Atrium's loader logs a bad
 document and carries on with defaults, which is the worst available outcome:
@@ -153,12 +179,22 @@ so you can tell it from traffic the terminal asked for.
 Asks the terminal for more time with S(WTX) when the card is slow. Buys time on
 contact; a contactless kernel may refuse it and drop the transaction.
 
+| Field | |
+|---|---|
+| WTX multiplier | how much more time to ask for, 1 to 59 |
+| Request above (ms) | how slow the card has to be before it asks |
+
 Only the node that owns the RF or contact interface can actually send an S(WTX)
 block, so this one decides *when* one is warranted and records it.
 
 ### Breakpoint
 
 Holds each matching command until you release it from the console.
+
+| Field | |
+|---|---|
+| Break on INS | one byte, e.g. `AE` for GENERATE AC. Empty catches every command |
+| Allow editing the held bytes | whether `release <hex>` may substitute something else |
 
 Stops the clock dead — any real terminal will time out while you think, which
 is why it is a node you add deliberately rather than a mode.
@@ -202,9 +238,17 @@ visible as the weaker claim it is.
 
 ### PC/SC reader · needs pyscard and a reader on this machine
 
+| Field | |
+|---|---|
+| Reader | which reader, when more than one is attached |
+
 A contact card in a reader attached to the runtime's host.
 
 ### ACR122U field · needs pyscard, an ACR122U, and atrium's contactless transport
+
+| Field | |
+|---|---|
+| Reader | which ACR122U, when more than one is attached |
 
 A contactless card sitting in an ACR122U's RF field.
 
@@ -218,7 +262,8 @@ A card held in an Android phone's field, reached through an NFCGate server.
 
 | Field | |
 |---|---|
-| Server host, port | the NFCGate server, default `5566` |
+| Server host | where the NFCGate server is |
+| Server port | its port, `5566` by default |
 | Session | which session to join |
 | CA certificate | for a TLS server; empty means plaintext on the local network |
 
@@ -232,7 +277,8 @@ A reader on another machine, reached over atrium's card proxy.
 
 | Field | |
 |---|---|
-| Proxy host, port | default `7654` |
+| Proxy host | where the card proxy is listening |
+| Proxy port | its port, `7654` by default |
 | Pairing secret | without it the link is unauthenticated |
 
 ---

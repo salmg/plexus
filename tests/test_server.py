@@ -25,9 +25,12 @@ from fastapi.testclient import TestClient
 # `from tests.test_server import collect` only resolves when pytest is started
 # from the repository root.
 from frames import (
+    FRAME_BUDGET_S,
     collect,
     collect_state,
     collect_until,
+    pull,
+    unwrap,
 )
 
 from plexus.api import server as server_module
@@ -628,3 +631,155 @@ def test_a_flush_sends_the_trace_then_the_telemetry_then_the_state():
     assert len(sent) == 1 and sent[0]["type"] == "batch"
     assert [f["type"] for f in sent[0]["frames"]] == ["apdu", "node", "state"]
     assert held(session) == 0, "a flush empties everything it sent"
+
+
+# ── Every console verb ──────────────────────────────────────────────────────
+#
+# `help`, `status` and `tx` had tests; `nodes`, `edges`, `devices`, `pause`,
+# `resume` and `check` had none, and neither did `release` until the breakpoint
+# work. A verb nobody tests is a verb that can quietly stop answering — and
+# PROTOCOL.md says these are the ones every runtime should have.
+
+
+def armed_client(client):
+    """A socket with the probe rig armed and settled."""
+    socket = client.websocket_connect("/ws").__enter__()
+    socket.send_json({"type": "hello", "version": 1})
+    collect(socket, until="state")
+    socket.send_json({"type": "arm", "graph": graph_frame()})
+    collect_state(socket, "running")
+    return socket
+
+
+def answer(socket, line: str):
+    socket.send_json({"type": "command", "id": line.split()[0], "line": line})
+    return next(f for f in collect(socket, until="result") if f["type"] == "result")
+
+
+def test_every_verb_the_protocol_lists_is_answered(client):
+    """
+    The list in PROTOCOL.md, checked against the runtime rather than against a
+    copy of the list.
+    """
+    from plexus.api import console
+
+    documented = {
+        "help",
+        "status",
+        "nodes",
+        "edges",
+        "devices",
+        "tx",
+        "pause",
+        "resume",
+        "check",
+        "release",
+    }
+    assert set(console.verbs()) == documented
+
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        collect(socket, until="state")
+        for verb in sorted(documented):
+            result = answer(socket, verb)
+            assert result["lines"], "%s answered with nothing" % verb
+
+
+def test_nodes_and_edges_report_the_armed_chain(client):
+    socket = armed_client(client)
+    try:
+        nodes = "\n".join(answer(socket, "nodes")["lines"])
+        assert "p" in nodes and "c" in nodes
+        assert "apdu" in nodes
+
+        edges = "\n".join(answer(socket, "edges")["lines"])
+        assert "p:card -> c:terminal" in edges
+        assert "B out" in edges and "B in" in edges
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_devices_says_this_build_has_none(client):
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        collect(socket, until="state")
+        lines = answer(socket, "devices")["lines"]
+        assert any("No devices" in line for line in lines)
+
+
+def test_check_reruns_the_graph_checks(client):
+    socket = armed_client(client)
+    try:
+        assert answer(socket, "check")["lines"] == ["Nothing to fix."]
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_check_with_no_graph_says_so(client):
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        collect(socket, until="state")
+        assert answer(socket, "check")["lines"] == ["No graph loaded."]
+
+
+def test_pause_holds_traffic_and_resume_lets_it_go(client):
+    socket = armed_client(client)
+    try:
+        # The probe has run out of script by now, so the state is `running`
+        # with a dead driver — `pause` still applies to the chain.
+        paused = answer(socket, "pause")
+        # `level` is omitted when there is nothing wrong, not set to null.
+        assert paused.get("level") != "error", paused["lines"]
+
+        status = "\n".join(answer(socket, "status")["lines"])
+        assert "paused" in status
+
+        answer(socket, "resume")
+        assert "paused" not in "\n".join(answer(socket, "status")["lines"])
+    finally:
+        socket.__exit__(None, None, None)
+
+
+def test_pause_with_nothing_running_is_an_error(client):
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        collect(socket, until="state")
+        assert answer(socket, "pause").get("level") == "error"
+
+
+# ── Batching ────────────────────────────────────────────────────────────────
+
+
+def test_a_busy_run_is_delivered_as_batches(client):
+    """
+    PROTOCOL.md: a runtime "should coalesce a tick's worth of `node`, `edge`
+    and `apdu` frames into one `batch`". Nothing asserted it, so removing the
+    batching entirely would have left every test green — `unwrap` flattens a
+    batch, and a stream of single frames unwraps to the same list.
+    """
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        collect(socket, until="state")
+
+        socket.send_json({"type": "arm", "graph": graph_frame()})
+
+        # Read raw, without unwrapping, until the run has settled.
+        raw = []
+        deadline = time.monotonic() + FRAME_BUDGET_S
+        while time.monotonic() < deadline:
+            frame = pull(socket, deadline)
+            raw.append(frame)
+            if any(
+                f.get("type") == "log"
+                and "still bound" in f.get("line", {}).get("text", "")
+                for f in unwrap(frame)
+            ):
+                break
+
+        batches = [f for f in raw if f.get("type") == "batch"]
+        assert batches, "a whole run arrived without a single batch"
+        assert any(len(b["frames"]) > 1 for b in batches), (
+            "every batch carried one frame, which is not coalescing"
+        )
+        # And a batch is worth having: more frames came out than went over.
+        assert sum(len(unwrap(f)) for f in raw) > len(raw)

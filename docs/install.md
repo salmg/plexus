@@ -2,7 +2,9 @@
 
 Two halves, and you only need the first to get somewhere.
 
-- **The editor** needs Node 20 or newer. Nothing else. No reader, no Python.
+- **The editor** needs **Node 22.12 or newer** (20.19+ also works for
+  everything except regenerating the catalogue — see below). Nothing else.
+  No reader, no Python.
 - **The runtime** needs Python 3.8 or newer, and only when you want to arm a
   graph for real.
 

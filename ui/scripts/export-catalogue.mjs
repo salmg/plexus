@@ -7,7 +7,10 @@
  * TypeScript and exported here.  Run `npm run export:catalogue` after changing
  * the catalogue; CI fails if the checked-in file is stale.
  *
- * Node strips the TypeScript types on import, so this runs with plain `node`.
+ * Node strips the TypeScript types on import, so this runs with plain `node` —
+ * but only from **22.18** (or 23.6), where that stopped needing a flag. The
+ * rest of the editor's tooling is happy on 20.19+; this one script is not,
+ * and `docs/install.md` says so rather than leaving it to be discovered.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";

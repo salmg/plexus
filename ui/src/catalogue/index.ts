@@ -49,7 +49,7 @@ const TERMINALS: NodeType[] = [
       },
     ],
     caveats: [
-      "The daemon runs outside Plexus. This node checks that it is up and binds to it.",
+      "The daemon runs outside Plexus, started by hand in a root shell. Plexus never launches it.",
     ],
   },
   {

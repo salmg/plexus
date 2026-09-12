@@ -180,3 +180,36 @@ def test_pyproject_says_the_catalogue_is_package_data():
     text = (REPO / "pyproject.toml").read_text(encoding="utf-8")
     assert "[tool.setuptools.package-data]" in text
     assert 'plexus = ["schema/*.json"]' in text
+
+
+def test_the_manual_names_every_field_the_inspector_shows():
+    """
+    A control nobody documented is a control nobody can look up.
+
+    The manual had nineteen of them: every device picker, both of the timing
+    node's numbers, both of the breakpoint's, the mutation node's playbook and
+    its logging switch, and the agent's three. Some of those were on nodes the
+    page described in prose and gave no table at all.
+
+    Compared against the catalogue rather than a list kept beside it, because a
+    list kept beside it is the thing that went stale.
+    """
+    from plexus.catalogue import CATALOGUE
+
+    page = (REPO / "docs" / "nodes.md").read_text(encoding="utf-8")
+    missing = [
+        "%s.%s (%s)" % (node_type.key, field.key, field.label)
+        for node_type in CATALOGUE
+        for field in node_type.fields
+        if field.label not in page
+    ]
+    assert not missing, "docs/nodes.md never names:\n" + "\n".join(missing)
+
+
+def test_the_manual_names_every_node():
+    """The same, one level up."""
+    from plexus.catalogue import CATALOGUE
+
+    page = (REPO / "docs" / "nodes.md").read_text(encoding="utf-8")
+    missing = [t.key for t in CATALOGUE if t.title not in page]
+    assert not missing, "docs/nodes.md never names: %s" % ", ".join(missing)
