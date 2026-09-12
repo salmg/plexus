@@ -9,6 +9,7 @@ import { create } from "zustand";
 
 import { defaultConfig, requireNodeType } from "../catalogue";
 import { emptyGraph } from "../graph/types";
+import { remembered, THEME_KEY } from "./remember";
 import type {
   Device,
   PlexusGraph,
@@ -87,7 +88,10 @@ export const useGraph = create<GraphState>((set, get) => {
     selection: [],
     dragFrom: null,
     devices: [],
-    theme: "dark",
+    // Read here rather than restored by an effect: an effect raced the one
+    // that persists it, and the default overwrote the saved value often
+    // enough that choosing light mode did not survive a reload.
+    theme: remembered(THEME_KEY) === "light" ? "light" : "dark",
     dirty: false,
     past: [],
     future: [],

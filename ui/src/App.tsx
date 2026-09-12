@@ -4,10 +4,11 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { Canvas } from "./canvas/Canvas";
 import { TopBar } from "./chrome/TopBar";
 import { validate } from "./graph/validate";
-import { useT } from "./i18n";
+import { useLocale, useT } from "./i18n";
 import { Console } from "./panels/Console";
 import { Inspector } from "./panels/Inspector";
 import { Palette } from "./panels/Palette";
+import { CONSOLE_KEY, remember, remembered, THEME_KEY } from "./store/remember";
 import { useGraph } from "./store/useGraph";
 import { useRuntime } from "./store/useRuntime";
 import { CONTACTLESS_RELAY } from "./examples";
@@ -20,32 +21,6 @@ import { CONTACTLESS_RELAY } from "./examples";
  */
 const GRID_STEP = 18;
 
-const CONSOLE_KEY = "plexus.console-open";
-
-/*
- * Storage that is allowed to be unavailable.
- *
- * A private window, a browser with site data blocked, or a page opened from
- * `file://` all make `localStorage` *throw* rather than return nothing — and
- * this one is read in a `useState` initialiser, so the throw takes the whole
- * app down before it paints. Remembering which panels were open is not worth
- * that.
- */
-function remembered(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function remember(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Not being able to remember a panel is not worth telling anyone about.
-  }
-}
 
 /**
  * Below this the three columns leave the canvas too little to be worth
@@ -56,6 +31,7 @@ const INSPECTOR_MIN_WIDTH = 1100;
 
 export default function App() {
   const theme = useGraph((s) => s.theme);
+  const [locale] = useLocale();
   const graph = useGraph((s) => s.graph);
   const devices = useGraph((s) => s.devices);
   const setGraph = useGraph((s) => s.setGraph);
@@ -82,7 +58,15 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    remember(THEME_KEY, theme);
   }, [theme]);
+
+  // The page's language, which index.html hardcodes as English. A screen
+  // reader announces Spanish text with an English voice otherwise — the one
+  // part of translating an interface that is not visible to whoever did it.
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   useEffect(() => {
     remember(CONSOLE_KEY, consoleOpen ? "1" : "0");
