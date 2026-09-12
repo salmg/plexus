@@ -18,12 +18,13 @@ from pathlib import Path
 from typing import Any, Dict
 
 import pytest
-from fastapi import WebSocketDisconnect
-from fastapi.testclient import TestClient
 
 # Beside this file, not inside it: tests/test_security.py reads frames too, and
 # `from tests.test_server import collect` only resolves when pytest is started
 # from the repository root.
+from conftest import needs_atrium
+from fastapi import WebSocketDisconnect
+from fastapi.testclient import TestClient
 from frames import (
     FRAME_BUDGET_S,
     collect,
@@ -46,6 +47,10 @@ EXAMPLE = (
     / "probe-a-capture.plexus.yaml"
 )
 
+
+# Everything below drives a graph, and driving a graph needs the submodule.
+# See tests/conftest.py.
+pytestmark = needs_atrium
 
 def graph_frame() -> Dict[str, Any]:
     """The example rig in the shape the editor sends it."""

@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 import pytest
+from conftest import needs_atrium
 
 from plexus.graph import Graph, PortRef, validate
 from plexus.nodes import terminal as terminal_nodes
@@ -29,6 +30,10 @@ from plexus.nodes.transform import Trace, TransformError
 from plexus.nodes.transform import build as build_transform
 from plexus.runtime import Engine, EngineError, node_implementations
 from plexus.runtime.events import Sink
+
+# Everything below drives a graph, and driving a graph needs the submodule.
+# See tests/conftest.py.
+pytestmark = needs_atrium
 
 REPO = Path(__file__).resolve().parent.parent
 CAPTURE = Path(__file__).resolve().parent / "captures" / "mastercard-probe.jsonl"

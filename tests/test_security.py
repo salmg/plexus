@@ -13,11 +13,12 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from fastapi import WebSocketDisconnect
-from fastapi.testclient import TestClient
 
 # The bounded frame collector, not a second copy of it: an unbounded read here
 # would hang this suite exactly as it hung that one.
+from conftest import needs_atrium
+from fastapi import WebSocketDisconnect
+from fastapi.testclient import TestClient
 from frames import collect
 
 from plexus.api import console
@@ -83,6 +84,7 @@ def test_a_capture_node_cannot_read_outside_the_workspace():
         build_card("capture", {"path": "/etc/passwd"})
 
 
+@needs_atrium
 def test_a_capture_node_reads_a_capture_inside_the_workspace():
     card = build_card("capture", {"path": CAPTURE, "strict": False})
     assert card.path.is_file()
@@ -264,6 +266,7 @@ def test_traversal_in_a_playbook_log_path_is_refused_too():
     assert "outside the workspace" in str(refused.value)
 
 
+@needs_atrium
 def test_a_playbook_log_path_inside_the_workspace_still_works():
     """The legitimate use, which has to keep working."""
     wanted = REPO / "logs" / "playbook-log-test.jsonl"
@@ -281,6 +284,7 @@ def test_a_playbook_log_path_inside_the_workspace_still_works():
             wanted.unlink()
 
 
+@needs_atrium
 def test_the_playbook_atrium_reloads_is_the_sanitised_one():
     """
     Atrium's `reload()` re-reads the playbook at the start of every
@@ -307,6 +311,7 @@ def test_the_playbook_atrium_reloads_is_the_sanitised_one():
                 leftover.unlink()
 
 
+@needs_atrium
 def test_the_log_every_rewrite_switch_reaches_atrium():
     """
     It did not. The node stored `logMutations` on itself and never read it
