@@ -628,3 +628,15 @@ a.topbar__brand:hover {
 a.topbar__brand:hover small {
   color: var(--text-dim);
 }
+
+/* The fault reason on the runtime badge. Truncated rather than allowed to push
+   the toolbar around — the full text is in the title attribute and in the
+   console, which is where you go to read it. */
+.badge__detail {
+  display: inline-block;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}

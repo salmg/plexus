@@ -112,6 +112,8 @@ const esChrome: Record<MessageKey, string> = {
   "inspector.hint":
     "Selecciona un nodo para configurarlo. Las estimaciones de arriba son la suma del coste declarado de cada nodo, no una medición.",
   "inspector.label": "Etiqueta",
+  "inspector.host": "Se ejecuta en",
+  "inspector.hostNone": "esta máquina",
   "inspector.id": "id",
   "inspector.cost": "coste",
   "inspector.cost.value": "{ms} ms por trayecto",

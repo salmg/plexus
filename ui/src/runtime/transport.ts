@@ -55,10 +55,6 @@ export function now(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
 
-export function hex(bytes: number[]): string {
-  return bytes.map((b) => b.toString(16).padStart(2, "0").toUpperCase()).join("");
-}
-
 /** Parse a hex string, tolerating spaces and colons.  Null when malformed. */
 export function parseHex(text: string): number[] | null {
   const clean = text.replace(/[\s:]/g, "");

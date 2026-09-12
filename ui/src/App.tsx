@@ -12,6 +12,14 @@ import { useGraph } from "./store/useGraph";
 import { useRuntime } from "./store/useRuntime";
 import { CONTACTLESS_RELAY } from "./examples";
 
+/**
+ * How far an arrow key moves a selection.
+ *
+ * Eighteen, because that is the Background grid the canvas draws, so a nudged
+ * node lands on it. Shift gives one pixel, for when it has to be exact.
+ */
+const GRID_STEP = 18;
+
 const CONSOLE_KEY = "plexus.console-open";
 
 /*
@@ -89,6 +97,56 @@ export default function App() {
     }
   }, [init, setGraph]);
 
+  // Select-all and nudge, which the store has always been able to do and
+  // nothing ever called. Arrow keys move a selection the way dragging does but
+  // by a known amount, which is the only way to line two nodes up exactly; and
+  // Ctrl/Cmd+A is how you select a whole canvas everywhere else.
+  //
+  // Ignored while the caret is in a field: the console, the inspector's text
+  // boxes and the playbook editor all want these keys for themselves.
+  useEffect(() => {
+    const typing = (target: EventTarget | null): boolean => {
+      // `instanceof Element`, not a cast: a keydown can be targeted at the
+      // window or the document, and `closest` is not a method on either.
+      if (!(target instanceof Element)) return false;
+      const tag = target.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        (target as HTMLElement).isContentEditable ||
+        target.closest(".console") !== null
+      );
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (typing(event.target)) return;
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        useGraph.getState().selectAll();
+        return;
+      }
+
+      const step = event.shiftKey ? 1 : GRID_STEP;
+      const move: Record<string, [number, number]> = {
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+        ArrowUp: [0, -step],
+        ArrowDown: [0, step],
+      };
+      const delta = move[event.key];
+      if (!delta) return;
+
+      const { selection, nudge } = useGraph.getState();
+      if (selection.length === 0) return;
+      event.preventDefault();
+      nudge(selection, delta[0], delta[1]);
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // `t` changes identity when the locale does, which is what re-runs the
   // validator: it writes sentences people read, so its output is language.
   const t = useT();
@@ -116,7 +174,7 @@ export default function App() {
         <Palette />
 
         <div
-          className={`shell__centre${consoleOpen ? " shell__centre--with-console" : ""}`}
+          className="shell__centre"
         >
           <ReactFlowProvider>
             <Canvas problems={problems} />

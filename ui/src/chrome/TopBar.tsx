@@ -9,7 +9,7 @@
 
 import { useRef, useState } from "react";
 
-import { fromYaml, GraphParseError, toYaml } from "../graph/serialize";
+import { FILE_EXTENSION, fromYaml, GraphParseError, toYaml } from "../graph/serialize";
 import type { Problem } from "../graph/validate";
 import { hasBlockingProblem } from "../graph/validate";
 import { emptyGraph } from "../graph/types";
@@ -49,6 +49,7 @@ export function TopBar({
   const canRedo = useGraph((s) => s.future.length > 0);
 
   const state = useRuntime((s) => s.state);
+  const detail = useRuntime((s) => s.detail);
   const runtime = useRuntime((s) => s.runtime);
   const run = useRuntime((s) => s.run);
   const stop = useRuntime((s) => s.stop);
@@ -72,7 +73,8 @@ export function TopBar({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${graph.name.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase()}.plexus.yaml`;
+    const stem = graph.name.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase();
+    a.download = `${stem}${FILE_EXTENSION}`;
     a.click();
     URL.revokeObjectURL(url);
     markClean();
@@ -126,8 +128,21 @@ export function TopBar({
         </span>
       )}
 
-      <span className="badge" title={t("topbar.runtime.title")}>
+      {/*
+        The runtime, and why it is unhappy when it is.
+
+        `detail` was written on every state change and read by nothing, so the
+        reason a run faulted — the one sentence that says what to fix — reached
+        the store and stopped there. It rides the badge the state already has.
+      */}
+      <span
+        className={`badge${state === "faulted" ? " badge--danger" : ""}`}
+        title={detail ?? t("topbar.runtime.title")}
+      >
         {runtime.label}
+        {state === "faulted" && detail && (
+          <span className="badge__detail"> — {detail}</span>
+        )}
       </span>
 
       <button

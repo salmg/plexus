@@ -94,7 +94,8 @@
           "kind": "text",
           "key": "host",
           "label": "vpcd host",
-          "default": "127.0.0.1"
+          "default": "127.0.0.1",
+          "reaches": "address"
         },
         {
           "kind": "number",
@@ -352,7 +353,8 @@
           "kind": "text",
           "key": "path",
           "label": "Write to",
-          "placeholder": "logs/trace.jsonl"
+          "placeholder": "logs/trace.jsonl",
+          "reaches": "file"
         }
       ]
     },
@@ -511,7 +513,8 @@
           "kind": "text",
           "key": "host",
           "label": "Server host",
-          "default": "127.0.0.1"
+          "default": "127.0.0.1",
+          "reaches": "address"
         },
         {
           "kind": "number",
@@ -533,7 +536,8 @@
           "key": "cafile",
           "label": "CA certificate",
           "placeholder": "optional, for a TLS server",
-          "help": "Leave empty for a plaintext server on the local network."
+          "help": "Leave empty for a plaintext server on the local network.",
+          "reaches": "file"
         }
       ],
       "caveats": [
@@ -561,7 +565,8 @@
           "kind": "text",
           "key": "host",
           "label": "Proxy host",
-          "default": "127.0.0.1"
+          "default": "127.0.0.1",
+          "reaches": "address"
         },
         {
           "kind": "number",
@@ -600,7 +605,8 @@
           "kind": "text",
           "key": "path",
           "label": "Capture file",
-          "placeholder": "logs/session-2026-09-11.jsonl"
+          "placeholder": "logs/session-2026-09-11.jsonl",
+          "reaches": "file"
         },
         {
           "kind": "bool",

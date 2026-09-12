@@ -299,7 +299,11 @@
   box-shadow: 0 0 0 3px var(--port-card-wash);
 }
 
-.pport--responder:hover {
+/* Specific enough to win. `.pport--responder:hover` alone lost to
+   `.react-flow__handle.pport:hover` above on specificity, so a responder
+   port showed the card-coloured ring — the one thing the modifier
+   existed to prevent. */
+.react-flow__handle.pport--responder:hover {
   box-shadow: 0 0 0 3px var(--port-terminal-wash);
 }
 

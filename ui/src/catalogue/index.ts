@@ -86,7 +86,13 @@ const TERMINALS: NodeType[] = [
     ports: [CARD_PORT],
     latencyMs: 1,
     fields: [
-      { kind: "text", key: "host", label: "vpcd host", default: "127.0.0.1" },
+      {
+        kind: "text",
+        key: "host",
+        label: "vpcd host",
+        default: "127.0.0.1",
+        reaches: "address",
+      },
       { kind: "number", key: "port", label: "vpcd port", default: 35963, min: 1, max: 65535 },
     ],
     caveats: ["Needs virtualsmartcard installed and vpcd loaded into pcscd."],
@@ -187,7 +193,13 @@ const CARDS: NodeType[] = [
     device: "nfcgate",
     latencyMs: 35,
     fields: [
-      { kind: "text", key: "host", label: "Server host", default: "127.0.0.1" },
+      {
+        kind: "text",
+        key: "host",
+        label: "Server host",
+        default: "127.0.0.1",
+        reaches: "address",
+      },
       { kind: "number", key: "port", label: "Server port", default: 5566, min: 1, max: 65535 },
       { kind: "number", key: "session", label: "Session", default: 1, min: 1 },
       {
@@ -196,6 +208,7 @@ const CARDS: NodeType[] = [
         label: "CA certificate",
         placeholder: "optional, for a TLS server",
         help: "Leave empty for a plaintext server on the local network.",
+        reaches: "file",
       },
     ],
     caveats: [
@@ -212,7 +225,13 @@ const CARDS: NodeType[] = [
     device: "proxy",
     latencyMs: 20,
     fields: [
-      { kind: "text", key: "host", label: "Proxy host", default: "127.0.0.1" },
+      {
+        kind: "text",
+        key: "host",
+        label: "Proxy host",
+        default: "127.0.0.1",
+        reaches: "address",
+      },
       { kind: "number", key: "port", label: "Proxy port", default: 7654, min: 1, max: 65535 },
       {
         kind: "text",
@@ -237,6 +256,7 @@ const CARDS: NodeType[] = [
         key: "path",
         label: "Capture file",
         placeholder: "logs/session-2026-09-11.jsonl",
+        reaches: "file",
       },
       {
         kind: "bool",
@@ -322,7 +342,13 @@ const TRANSFORMS: NodeType[] = [
           { value: "annotated", label: "Decoded and annotated" },
         ],
       },
-      { kind: "text", key: "path", label: "Write to", placeholder: "logs/trace.jsonl" },
+      {
+        kind: "text",
+        key: "path",
+        label: "Write to",
+        placeholder: "logs/trace.jsonl",
+        reaches: "file",
+      },
     ],
   },
   {
@@ -390,13 +416,6 @@ export function requireNodeType(key: string): NodeType {
   if (!t) throw new Error(`Unknown node type: ${key}`);
   return t;
 }
-
-export const CLASS_LABEL: Record<string, string> = {
-  terminal: "Terminal side",
-  transform: "Transforms",
-  card: "Card side",
-  host: "Host layer",
-};
 
 export const CLASS_ORDER = ["terminal", "transform", "card", "host"] as const;
 

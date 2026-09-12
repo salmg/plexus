@@ -199,6 +199,8 @@ function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem
   const t = useT();
   const type = nodeType(node.type);
   const renameNode = useGraph((s) => s.renameNode);
+  const setNodeHost = useGraph((s) => s.setNodeHost);
+  const hosts = useGraph((s) => s.graph.hosts);
   const toggleDisabled = useGraph((s) => s.toggleDisabled);
   const removeNode = useGraph((s) => s.removeNode);
   const select = useGraph((s) => s.select);
@@ -267,6 +269,36 @@ function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem
               onChange={(e) => renameNode(node.id, e.target.value)}
             />
           </label>
+
+          {/*
+            Which machine this node runs on.
+
+            The model has carried `host` from the start, the shipped relay
+            example uses it, and `_host_problems` refuses a cross-machine edge
+            that carries card traffic with no pairing secret — but `setNodeHost`
+            had no caller, so there was no way to set one. The field existed
+            everywhere except where a person could reach it.
+
+            Only shown when the graph declares hosts: on a single-machine rig
+            it is a control with one empty option.
+          */}
+          {hosts.length > 0 && (
+            <label className="field">
+              <span className="field__label">{t("inspector.host")}</span>
+              <select
+                className="input"
+                value={node.host ?? ""}
+                onChange={(e) => setNodeHost(node.id, e.target.value)}
+              >
+                <option value="">{t("inspector.hostNone")}</option>
+                {hosts.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.address ? `${h.name} (${h.address})` : h.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           {type.fields.map((field) => (
             <Field key={field.key} node={node} field={field} />

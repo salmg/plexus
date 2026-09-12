@@ -21,6 +21,17 @@ interface FieldBase {
   help?: string;
   /** Hide this field unless another field holds a given value. */
   showWhen?: { key: string; equals: unknown };
+  /**
+   * What this field makes the graph reach for, when it reaches beyond itself.
+   *
+   * Read by `describeIntent`, which builds the sheet shown before a graph
+   * somebody sent you is opened. That used to guess from the key name —
+   * anything called `path` was a file, anything called `host` was an address —
+   * so `cafile` was a file the graph opened and the sheet never mentioned.
+   * Declared here instead, because the catalogue is where a node's facts live
+   * and a guess is not a fact.
+   */
+  reaches?: "file" | "address";
 }
 
 export type FieldSpec =

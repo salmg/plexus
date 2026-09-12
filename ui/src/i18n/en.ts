@@ -90,6 +90,8 @@ export const en = {
   "inspector.hint":
     "Select a node to configure it. Estimates above are the sum of each node's declared cost, not a measurement.",
   "inspector.label": "Label",
+  "inspector.host": "Runs on",
+  "inspector.hostNone": "this machine",
   "inspector.id": "id",
   "inspector.cost": "cost",
   "inspector.cost.value": "{ms} ms each way",

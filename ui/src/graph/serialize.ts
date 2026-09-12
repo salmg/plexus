@@ -253,14 +253,21 @@ export function describeIntent(graph: PlexusGraph): GraphIntent {
     for (const field of type.fields) {
       const value = node.config[field.key];
       if (typeof value !== "string" || value === "") continue;
-      if (field.kind === "device") devices.push(value);
-      if (field.key === "path") files.push(value);
-    }
 
-    const host = node.config.host;
-    const port = node.config.port;
-    if (typeof host === "string" && host !== "") {
-      addresses.push(typeof port === "number" ? `${host}:${port}` : host);
+      if (field.kind === "device") {
+        devices.push(value);
+        continue;
+      }
+      // `field.reaches`, not the key's name. This used to treat anything
+      // called `path` as a file and anything called `host` as an address,
+      // which meant `cafile` — a file the graph opens, on the node that dials
+      // across a network — was never on the sheet this function exists to
+      // fill in.
+      if (field.reaches === "file") files.push(value);
+      if (field.reaches === "address") {
+        const port = node.config.port;
+        addresses.push(typeof port === "number" ? `${value}:${port}` : value);
+      }
     }
   }
 
