@@ -305,13 +305,36 @@ function NodeInspector({ node, problems }: { node: PlexusNode; problems: Problem
 
 /* ── Generated controls ─────────────────────────────────────────────────── */
 
+/** A field's catalogue default. Not every kind has one — a device has none. */
+function defaultOf(field: FieldSpec): unknown {
+  return "default" in field ? field.default : undefined;
+}
+
+/**
+ * A node's value for a config key, falling back to the catalogue default.
+ *
+ * The runtime reads config this way — `config.get(key, default)` — so reading
+ * the raw object here made the two disagree about a graph that simply had not
+ * saved the key.
+ */
+function configOf(node: PlexusNode, key: string): unknown {
+  const spec = nodeType(node.type)?.fields.find((f) => f.key === key);
+  return node.config[key] ?? (spec ? defaultOf(spec) : undefined);
+}
+
 function Field({ node, field }: { node: PlexusNode; field: FieldSpec }) {
   const t = useT();
   const updateConfig = useGraph((s) => s.updateConfig);
   const devices = useGraph((s) => s.devices);
-  const value = node.config[field.key];
 
-  if (field.showWhen && node.config[field.showWhen.key] !== field.showWhen.equals) {
+  // The catalogue's default when the key is absent, because that is what the
+  // runtime does: `config.get("logMutations", True)`. Reading the raw config
+  // instead meant a graph saved without the key showed the box unchecked while
+  // the run treated it as on — and `showWhen` hid fields whose controlling
+  // value was only ever a default.
+  const value = node.config[field.key] ?? defaultOf(field);
+
+  if (field.showWhen && configOf(node, field.showWhen.key) !== field.showWhen.equals) {
     return null;
   }
 

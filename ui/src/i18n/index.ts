@@ -109,7 +109,11 @@ export function t(key: MessageKey | string, vars?: Vars): string {
  */
 export function tn(key: MessageKey | string, count: number, vars?: Vars): string {
   const form = count === 1 ? `${key}_one` : `${key}_other`;
-  return t(form, { ...vars, count });
+  // `count` first, so a caller that formats it — `toLocaleString()` for the
+  // thousands separator the reader expects — keeps its version. Spreading it
+  // last overwrote that with the raw number, so every grouped count on a node
+  // card was quietly ungrouped.
+  return t(form, { count, ...vars });
 }
 
 /**

@@ -115,11 +115,34 @@ export const useRuntime = create<RuntimeState>((set, get) => ({
 
   run: async (graph) => {
     set({ nodes: {}, edges: {}, apdus: [] });
-    await get().runtime.arm(graph);
+    try {
+      await get().runtime.arm(graph);
+    } catch (error) {
+      // `arm` used to resolve whether or not the frame went anywhere, so
+      // pressing Run with the runtime gone showed a run starting with nothing
+      // on the other end.
+      set({ state: "faulted", detail: message(error) });
+      set((s) => ({
+        logs: [
+          ...s.logs,
+          { t: 0, level: "error" as const, source: "plexus", text: message(error) },
+        ].slice(-LOG_LIMIT),
+      }));
+    }
   },
 
   stop: async () => {
-    await get().runtime.stop();
+    try {
+      await get().runtime.stop();
+    } catch (error) {
+      set({ state: "stopped", detail: message(error) });
+      set((s) => ({
+        logs: [
+          ...s.logs,
+          { t: 0, level: "error" as const, source: "plexus", text: message(error) },
+        ].slice(-LOG_LIMIT),
+      }));
+    }
   },
 
   send: (line) => get().runtime.command(line),
@@ -127,6 +150,22 @@ export const useRuntime = create<RuntimeState>((set, get) => ({
   clearTrace: () => set({ apdus: [], logs: [] }),
 }));
 
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Is there something to stop?
+ *
+ * Not the same question as "is a run in progress", which is what this used to
+ * answer. A faulted run keeps its card bound on purpose — `_release_if_idle`
+ * in the engine leaves the rig up so it can be inspected — and a finished
+ * script settles to `running` for the same reason. With `faulted` excluded,
+ * the editor showed Run again while the reader was still claimed, and there
+ * was no button left that would release it.
+ *
+ * So: everything except `stopped` has something to stop.
+ */
 export function isRunning(state: RunState): boolean {
-  return state === "running" || state === "arming";
+  return state !== "stopped";
 }

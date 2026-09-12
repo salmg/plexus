@@ -2,9 +2,10 @@
  * The real runtime, over a WebSocket.
  *
  * The Python process holds the readers, so everything here is a message.  The
- * frame shapes are specified in PROTOCOL.md and mirrored by
- * `plexus/api/protocol.py`; this file and that one are the two ends of the same
- * contract, and neither should grow a field the other has not agreed to.
+ * frame shapes are specified in PROTOCOL.md; the other end of the contract is
+ * `plexus/api/session.py`, which builds every frame this file reads and reads
+ * every frame this file sends.  Neither should grow a field the other has not
+ * agreed to.
  *
  * Two things this does that the simulator does not have to:
  *
@@ -12,7 +13,8 @@
  *    than a browser wants as individual messages, so the runtime is free to
  *    coalesce a tick's worth into one `batch`.
  *  - It reconnects.  Losing the socket is not losing the run: the relay keeps
- *    going, and on reconnect the runtime replays current state.
+ *    going, and on reconnect the runtime replays current state.  A *refusal*
+ *    is different — see REFUSALS — because reconnecting cannot change it.
  */
 
 import type {
@@ -48,6 +50,24 @@ interface Pending {
 const COMMAND_TIMEOUT_MS = 15_000;
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_MS = 8_000;
+
+/**
+ * Close codes that mean the runtime understood and said no.
+ *
+ * Only 4400 is here, and that is not an oversight. `plexus/api/server.py` also
+ * refuses a bad token with 4401 and a bad origin or host with 4403 — but it
+ * sends those *before* `accept()`, and a close before accept is an HTTP 403 to
+ * the browser, not a WebSocket close code. Measured: a token-protected runtime
+ * logs `connection rejected (403 Forbidden)` and the page sees an ordinary
+ * abnormal close with no reason at all. Listing codes that cannot arrive would
+ * be the same defect this file is being cleaned of, so they are not listed.
+ *
+ * 4400 is different: the protocol-version check runs in the read loop, after
+ * the socket is accepted, so that code does reach here.
+ */
+const REFUSALS: Record<number, string> = {
+  4400: "This runtime speaks a different protocol version. Update one of them.",
+};
 
 export class WebSocketRuntime implements Runtime {
   readonly label: string;
@@ -120,12 +140,18 @@ export class WebSocketRuntime implements Runtime {
       this.socket = socket;
 
       socket.onopen = () => {
-        this.retries = 0;
         this.send({ type: "hello", version: PROTOCOL_VERSION });
         resolve();
       };
 
       socket.onmessage = (event) => {
+        // Backoff resets here, not in `onopen`. A runtime that accepts the
+        // socket and *then* refuses it — a protocol-version mismatch does
+        // exactly that — had already reset the counter by the time it said no,
+        // so every retry waited the base 500 ms, forever, against a runtime
+        // that was never going to say yes. A frame arriving is the first
+        // evidence the other end is one of ours.
+        this.retries = 0;
         try {
           this.receive(JSON.parse(String(event.data)) as ServerFrame);
         } catch {
@@ -143,10 +169,26 @@ export class WebSocketRuntime implements Runtime {
         // beyond not letting the error escape as an unhandled event.
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
         this.socket = null;
         this.failPending("The runtime connection closed.");
         if (this.closing) return;
+
+        // A refusal is not a dropped connection. These codes mean the runtime
+        // understood and said no — reconnecting cannot change its mind, and a
+        // retry loop against it is noise that hides the reason.
+        const refusal = REFUSALS[event.code];
+        if (refusal) {
+          this.handlers?.onState("faulted", refusal);
+          this.handlers?.onLog({
+            t: 0,
+            level: "error",
+            source: "plexus",
+            text: refusal,
+          });
+          resolve();
+          return;
+        }
 
         this.handlers?.onState("faulted", "Lost the runtime. Reconnecting.");
         const wait = Math.min(
@@ -160,9 +202,13 @@ export class WebSocketRuntime implements Runtime {
   }
 
   private send(message: Record<string, unknown>): void {
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(message));
+    if (this.socket?.readyState !== WebSocket.OPEN) {
+      // Said, not swallowed. `arm` and `stop` used to resolve as though they
+      // had happened: press Run with the runtime gone and the editor showed a
+      // run starting, with nothing on the other end.
+      throw new Error("Not connected to a runtime.");
     }
+    this.socket.send(JSON.stringify(message));
   }
 
   private receive(frame: ServerFrame): void {
