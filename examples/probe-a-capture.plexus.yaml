@@ -1,0 +1,55 @@
+# Plexus graph.
+#
+# The rig that needs nothing: a fingerprint probe asking, a recorded capture
+# answering, and a mutation node between them rewriting the PAN sequence number
+# on the way back. No reader, no phone, no atrium runtime — this runs on a
+# laptop, which is what makes it the thing the test suite drives.
+#
+#   plexus run examples/probe-a-capture.plexus.yaml
+version: 1
+name: probe a recorded card
+
+nodes:
+  - id: probe-1
+    type: probe
+    at: [40, 160]
+    config:
+      depth: standard
+
+  - id: mutation-1
+    label: sequence number
+    type: mutation
+    at: [320, 160]
+    config:
+      logMutations: false
+      playbook: |
+        # Rewrite one tag on the way back, to show a transform working.
+        enabled: true
+        log_mutations: false
+
+        pdol_mutations: []
+        afl_mutations: []
+        dol_mutations: []
+        injected_commands: []
+
+        response_mutations:
+          - tag: "5F34"
+            mode: replace
+            value: "07"
+            enabled: true
+            comment: "PAN sequence number"
+
+  - id: capture-1
+    type: capture
+    at: [600, 160]
+    config:
+      path: tests/captures/mastercard-probe.jsonl
+      strict: false
+
+edges:
+  - id: probe-1:card->mutation-1:terminal
+    from: probe-1:card
+    to: mutation-1:terminal
+  - id: mutation-1:card->capture-1:terminal
+    from: mutation-1:card
+    to: capture-1:terminal

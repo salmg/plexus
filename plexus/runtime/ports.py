@@ -1,0 +1,180 @@
+"""
+What a node has to be, and how a chain is composed from them.
+
+Three shapes, matching the three port arrangements the catalogue allows:
+
+    CardNode      only answers   — connect / atr / transmit / close
+    TransformNode answers and asks — on_command / on_response
+    TerminalNode  only asks      — drive(channel, stop)
+
+The first two are atrium's existing contracts under different names, which is
+why this file is short. The third is new, and it is the one that inverts
+control: a terminal is not called, it *drives*. A real terminal decides when to
+send and what to send next, and the engine's job is to hand it something that
+looks like a card and then get out of the way.
+
+A chain composes transforms around a card into one object with a `transmit`,
+and that object is what a terminal drives. Commands run through the transforms
+outward-in, responses back through them inward-out — which is the only ordering
+that makes a transform's two hooks bracket the same exchange.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Callable, List, Optional, Protocol, runtime_checkable
+
+
+@runtime_checkable
+class CardNode(Protocol):
+    """Something that answers APDUs. Atrium's ``CardTransport``, renamed."""
+
+    def connect(self) -> None: ...
+
+    def get_atr(self) -> bytes: ...
+
+    def transmit(self, apdu: bytes) -> bytes: ...
+
+    def disconnect(self) -> None: ...
+
+
+@runtime_checkable
+class TransformNode(Protocol):
+    """
+    Something that sits in the conversation. Atrium's mutation hooks.
+
+    Both hooks must return bytes, and returning the argument unchanged is a
+    perfectly good implementation — a trace tap does exactly that.
+    """
+
+    def on_command(self, apdu: bytes) -> bytes: ...
+
+    def on_response(self, command: bytes, response: bytes) -> bytes: ...
+
+
+class TerminalNode(Protocol):
+    """Something that asks. It owns the loop; the engine does not."""
+
+    def drive(self, channel: "Chain", stop: Callable[[], bool]) -> None: ...
+
+
+class ChainError(RuntimeError):
+    """The chain could not carry an exchange. User-facing."""
+
+
+class Chain:
+    """
+    The card, wrapped in its transforms, as one thing a terminal can drive.
+
+    Every exchange is timed and reported before it is returned, so telemetry
+    costs the caller nothing and cannot be forgotten at a call site.
+    """
+
+    def __init__(
+        self,
+        card: CardNode,
+        transforms: List[TransformNode],
+        *,
+        card_id: str = "card",
+        transform_ids: Optional[List[str]] = None,
+        observer: Optional["ExchangeObserver"] = None,
+    ) -> None:
+        self._card = card
+        self._transforms = transforms
+        self._card_id = card_id
+        self._transform_ids = transform_ids or [f"t{i}" for i in range(len(transforms))]
+        self._observer = observer
+        self.exchanges = 0
+        self.errors = 0
+
+    def get_atr(self) -> bytes:
+        return self._card.get_atr()
+
+    def transmit(self, apdu: bytes) -> bytes:
+        """One command out, one response back, through every transform."""
+        started = time.perf_counter()
+        command = apdu
+
+        # Announced before anything happens, so the trace reads in the order
+        # events actually occurred: the command, then whatever rewrote it, then
+        # what came back. Reporting the pair at the end put every rewrite above
+        # the command that caused it.
+        if self._observer is not None:
+            self._observer.started(apdu)
+
+        for node_id, transform in zip(self._transform_ids, self._transforms):
+            rewritten = _as_bytes(transform.on_command(command))
+            if rewritten != command and self._observer is not None:
+                self._observer.rewrote(node_id, "command", command, rewritten)
+            command = rewritten
+
+        try:
+            response = _as_bytes(self._card.transmit(command))
+        except Exception as exc:
+            self.errors += 1
+            if self._observer is not None:
+                self._observer.failed(self._card_id, exc)
+            raise ChainError(f"{self._card_id}: {exc}") from exc
+
+        # What the card itself said, before anything downstream touched it.
+        # The trace reports this and then each rewrite, so the difference
+        # between what the card answered and what the terminal was told is
+        # visible rather than inferred.
+        from_card = response
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        if self._observer is not None:
+            self._observer.answered(from_card, elapsed_ms)
+
+        # Outward-in on the way down, inward-out on the way back, so a
+        # transform's two hooks bracket the same exchange.
+        for node_id, transform in zip(
+            reversed(self._transform_ids), reversed(self._transforms)
+        ):
+            rewritten = _as_bytes(transform.on_response(command, response))
+            if rewritten != response and self._observer is not None:
+                self._observer.rewrote(node_id, "response", response, rewritten)
+            response = rewritten
+
+        self.exchanges += 1
+        if self._observer is not None:
+            self._observer.exchanged(apdu, command, response, elapsed_ms)
+        return response
+
+
+class ExchangeObserver(Protocol):
+    """
+    How the engine hears about what crossed the chain.
+
+    Called in the order things happen — started, rewrote…, answered, rewrote…,
+    exchanged — so a listener that simply prints produces a readable trace with
+    no sorting of its own.
+    """
+
+    def started(self, asked: bytes) -> None: ...
+
+    def answered(self, from_card: bytes, elapsed_ms: float) -> None: ...
+
+    def exchanged(
+        self, asked: bytes, sent: bytes, response: bytes, elapsed_ms: float
+    ) -> None: ...
+
+    def rewrote(self, node_id: str, phase: str, before: bytes, after: bytes) -> None: ...
+
+    def failed(self, node_id: str, error: BaseException) -> None: ...
+
+
+def _as_bytes(value) -> bytes:
+    """
+    Atrium's hooks return whatever type they were given, and its relay path
+    historically dealt in ``str``.  Plexus deals in bytes everywhere, so the
+    one place that could see either normalises it.
+    """
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, bytearray):
+        return bytes(value)
+    if isinstance(value, str):
+        return value.encode("latin-1")
+    if isinstance(value, (list, tuple)):
+        return bytes(value)
+    raise ChainError(f"A node returned {type(value).__name__}, which is not an APDU.")

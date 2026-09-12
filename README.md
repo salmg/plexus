@@ -122,6 +122,32 @@ contactless relay to a phone
   42 ms each way, 84 ms out and back.
 ```
 
+And `run` arms the graph for real. One rig needs nothing at all — a fingerprint
+probe asking, a recorded capture answering, a mutation node between them:
+
+```bash
+plexus run examples/probe-a-capture.plexus.yaml
+```
+
+```
+info  Armed 3 nodes: probe-1 -> mutation-1 -> capture-1
+    31.2 -> 00A404000E325041592E5359532E444446303100
+    32.6 <- 6F20840E325041592E5359532E4444463031A50E…9000  1.4 ms
+    32.8 -> 00A4040007A000000004101000
+    34.1 <- 6F178407A0000000041010A50C500A4D61737465…9000  1.3 ms
+    34.2 -> 80A8000002830000
+    34.2 <- 770A82021C009404080101009000  0.0 ms
+    34.3 -> 00B2010C00
+    34.3 <- 70145A0854133300123456785F24032512315F3401019000  0.0 ms
+    34.4 <- 70145A0854133300123456785F24032512315F3401079000  rewritten by mutation-1
+
+4 exchanges, 0 errors.
+```
+
+The last two lines are the point: what the card said, and what the terminal was
+told. `plexus nodes` marks which node types this build can actually bind — the
+rest name the hardware or daemon they need and refuse at bind time.
+
 Tests:
 
 ```bash
@@ -142,6 +168,12 @@ ui/                     the editor (React, @xyflow/react, xterm.js)
 plexus/                 the runtime (Python)
   graph.py              the model again, and the same checks
   catalogue.py          reads schema/catalogue.json
+  runtime/              engine, the chain, the frames it emits
+  nodes/                card / terminal / transform implementations
+  adapters/             the only place that imports atrium
+  cli.py                check, show, run, nodes
+examples/               rigs you can open and one you can run
+tests/                  the model, and the engine end to end
 vendor/atrium/          submodule, never edited
 PROTOCOL.md             the WebSocket contract between the two
 ```
@@ -172,14 +204,35 @@ an atrium playbook — the files in `vendor/atrium/playbooks/` paste in unchange
 
 Being straight about the line:
 
-- **The Python runtime.** The graph model, the checks, the catalogue loader and
-  the CLI are written, tested and run; the engine that binds hardware and moves
-  APDUs is not. That part needs the rig, not a laptop.
-- **The atrium adapters.** `plexus/adapters/` does not exist yet. The seams it
-  will attach to are named above.
+- **The hardware nodes.** The engine binds, drives, rewrites, reports and
+  releases — but the only card it can bind today is a recorded capture and the
+  only terminal is the fingerprint probe. PC/SC, the ACR122U in either mode,
+  NFCGate, the card proxy, SimTrace2 and vpcd all resolve, and all refuse at
+  bind time naming what they need. They are adapter work against seams that
+  already exist in atrium, and they need the rig to be worth writing.
+- **The WebSocket server.** `PROTOCOL.md` is the contract and
+  `ui/src/runtime/ws.ts` is the editor's half; the runtime's half is not
+  written, so the editor still talks to its simulator. The engine already emits
+  exactly the frames the protocol describes — `plexus/runtime/events.py` is
+  those frames — so the server is a transport and little else.
 - **Host-layer nodes.** ISO 8583 is a second channel in the model (`iso8583`)
   with no nodes on it yet. The interesting one is a DE55 bridge, where the two
   halves atrium describes actually meet.
+
+### Why a laptop can run a whole graph
+
+Atrium splits cleanly in half, and only one half needs hardware.
+`mutation_engine`, `transport.recorded`, `emv_logger` and `card_fingerprint`
+are pure standard library — they import with no reader attached and no pyscard
+installed. So a graph made of a capture and some transforms is a complete,
+honest relay that runs anywhere, and that is what the test suite drives: bind,
+drive, rewrite, report, release, through atrium's real mutation engine.
+
+Everything Plexus asks of atrium it found rather than invented.
+`CardTransport` is connect / get_atr / transmit / disconnect, which is exactly
+a card-side node. `MutationEngine` is `on_command(cmd) -> cmd` and
+`on_response(cmd, resp) -> resp`, which is exactly a transform. All of it goes
+through `plexus/adapters/`, and nothing else in the codebase imports atrium.
 
 ### The two implementations have to agree
 
