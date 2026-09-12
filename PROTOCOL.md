@@ -48,12 +48,37 @@ over a socket is untrusted input that names hardware and dials addresses.
 | `apdu` | `{event}` — `{seq, t, edge, dir, hex, ms?, mutatedBy?, note?}` |
 | `log` | `{line}` — `{t, level, source, text}` |
 | `devices` | `{devices}` — the full list, every time; not a delta |
+| `implementations` | `{needs}` — node types this runtime *cannot* bind, keyed to what each one wants |
 | `result` | `{id, lines, level?}` — the answer to one `command` |
 | `error` | `{message}` |
 | `batch` | `{frames}` — any of the above, applied in order |
 
 `t` is milliseconds since the run started, not a wall clock. `hex` is uppercase
 with no separators.
+
+### What a runtime cannot bind
+
+`implementations` is sent once, in the reply to `hello`. A key present in
+`needs` is a node type this runtime has no implementation for, and the value
+is the sentence it would refuse with — the same sentence, from the same
+table, that `arm` raises:
+
+```json
+{ "type": "implementations",
+  "needs": { "pcsc": "pyscard and a reader attached to this machine",
+             "nfcgate": "atrium's NFCGate transport and a reachable server" } }
+```
+
+An empty object means everything binds, which is what the simulator sends.
+The editor greys those nodes in the palette and refuses to arm a graph that
+uses one, so a rig that cannot run says so before it opens a reader instead
+of after.
+
+It travels on the socket rather than over `/api/health`, which carries the
+same answer from the same function. The editor is served from a different
+port, so a fetch to health is cross-origin and the browser will not let the
+page read the reply; this socket is already open and has already passed the
+Origin check. Health is for whoever is holding a terminal.
 
 ### A finished terminal is not a stopped runtime
 

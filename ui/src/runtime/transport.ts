@@ -28,6 +28,14 @@ export interface RuntimeHandlers {
   onApdu: (event: ApduEvent) => void;
   onLog: (line: LogLine) => void;
   onDevices: (devices: Device[]) => void;
+  /**
+   * Node types this runtime cannot bind, and what each is waiting on.
+   *
+   * Absent from the map means it binds. The palette drew every node as if
+   * it would run, and you found out at Run — `/api/health` had been
+   * answering this question the whole time and nothing asked it.
+   */
+  onUnavailable: (needs: Record<string, string>) => void;
 }
 
 export interface ConsoleResult {

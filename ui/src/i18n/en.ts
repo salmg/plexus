@@ -43,6 +43,9 @@ export const en = {
   "palette.title": "Palette",
   "palette.filter": "Filter nodes",
   "palette.empty": "No node matches “{query}”.",
+  "palette.needs": "Needs {needs}. This runtime cannot bind it.",
+  "palette.unavailable":
+    "This runtime cannot bind this node. It needs {needs}. You can still draw it — the file outlives whichever runtime is answering.",
   "palette.class.terminal": "Terminal side",
   "palette.class.transform": "Transforms",
   "palette.class.card": "Card side",
@@ -155,6 +158,8 @@ export const en = {
     "{node} has nothing on its {port} port. Wire it to something that answers.",
   "check.twoChains":
     "This graph has {count} separate chains: {nodes}. Plexus runs one at a time, and would run the one starting at {running}.",
+  "check.nodeUnavailable":
+    "This runtime cannot bind {node}. It needs {needs}.",
   "check.unwiredOob":
     "{node} has nothing on its {port} port, so it will pass traffic through and inject nothing.",
   "check.unwiredResponder": "Nothing is asking {node} anything. It will sit idle.",

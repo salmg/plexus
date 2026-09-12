@@ -788,3 +788,67 @@ def test_a_busy_run_is_delivered_as_batches(client):
         )
         # And a batch is worth having: more frames came out than went over.
         assert sum(len(unwrap(f)) for f in raw) > len(raw)
+
+
+# ── What this build can bind ────────────────────────────────────────────────
+
+
+def test_hello_says_which_nodes_this_runtime_cannot_bind(client):
+    """
+    The editor drew every node as if it would run and you found out at Run —
+    after the card had been opened, with the reason arriving on the relay
+    thread. The runtime has always known the answer; nothing asked for it.
+    """
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        seen = collect(socket, until="state")
+
+        frame = next(f for f in seen if f["type"] == "implementations")
+        needs = frame["needs"]
+
+        # Every key is a node type, and every value says what it wants.
+        assert "pcsc" in needs
+        assert "reader" in needs["pcsc"]
+        assert "nfcgate" in needs
+        # The ones this build really does bind are absent, not present-and-empty.
+        for ready in ("probe", "capture", "trace", "mutation", "inject"):
+            assert ready not in needs
+
+
+def test_the_two_answers_about_a_node_cannot_disagree(client):
+    """
+    `/api/health` reports *whether*, the socket reports *why*, and both come
+    from the same tables. A node marked pending with nothing to say, or a
+    reason attached to a node that binds fine, would be worse than either.
+    """
+    health = client.get("/api/health").json()
+
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        seen = collect(socket, until="state")
+        needs = next(f for f in seen if f["type"] == "implementations")["needs"]
+
+    assert health["needs"] == needs
+    pending = {key for key, state in health["nodes"].items() if state == "pending"}
+    assert set(needs) == pending, "whether and why disagree about some node"
+    assert all(reason.strip() for reason in needs.values())
+
+
+def test_a_node_this_build_cannot_bind_is_refused_with_the_same_sentence(client):
+    """
+    The palette's reason and the arm's reason are the same string, which is the
+    point of taking both from `PENDING`.
+    """
+    from plexus.runtime import node_requirements
+
+    graph = graph_frame()
+    graph["nodes"][1]["type"] = "pcsc"
+    graph["nodes"][1]["config"] = {"device": "pcsc:0"}
+
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        collect(socket, until="state")
+        socket.send_json({"type": "arm", "graph": graph})
+        error = next(f for f in collect(socket, until="error") if f["type"] == "error")
+
+    assert node_requirements()["pcsc"] in error["message"]

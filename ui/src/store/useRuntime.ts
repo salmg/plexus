@@ -113,6 +113,8 @@ interface RuntimeState {
   /** How many have ever arrived, which outlives the ring buffer. */
   apduTotal: number;
   logTotal: number;
+  /** Node types this runtime cannot bind, keyed to what they need. */
+  unavailable: Record<string, string>;
 
   init: () => Promise<void>;
   run: (graph: PlexusGraph) => Promise<void>;
@@ -131,6 +133,7 @@ export const useRuntime = create<RuntimeState>((set, get) => ({
   logs: [],
   apduTotal: 0,
   logTotal: 0,
+  unavailable: {},
 
   init: async () => {
     if (get().connected) return;
@@ -169,6 +172,8 @@ export const useRuntime = create<RuntimeState>((set, get) => ({
         })),
 
       onDevices: (devices: Device[]) => useGraph.getState().setDevices(devices),
+
+      onUnavailable: (needs) => set({ unavailable: needs }),
     });
     set({ connected: true });
   },

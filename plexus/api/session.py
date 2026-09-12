@@ -23,7 +23,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from plexus.api import console
 from plexus.graph import Graph, GraphError
-from plexus.runtime import Engine, EngineError
+from plexus.runtime import Engine, EngineError, node_requirements
 from plexus.runtime.events import CallbackSink
 
 log = logging.getLogger(__name__)
@@ -333,6 +333,15 @@ class Session:
         # told everything it needs to catch up rather than being asked to
         # restart something that is still going.
         await self._deliver({"type": "devices", "devices": []})
+        # What this build cannot bind, and what each one needs. Over the
+        # socket rather than over `/api/health`, which carries the same
+        # answer from the same function: the editor is served from another
+        # port, so a fetch to health is cross-origin and the browser will
+        # not let it read the reply. This socket is already open and has
+        # already passed the Origin check.
+        await self._deliver(
+            {"type": "implementations", "needs": node_requirements()}
+        )
         await self._deliver({"type": "state", "state": self.engine.state})
         for node_id, telemetry in self.engine._telemetry.items():
             await self._deliver(

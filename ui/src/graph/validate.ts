@@ -177,7 +177,19 @@ function createsCycle(graph: PlexusGraph, fromNode: string, toNode: string): boo
 
 /* ── Whole-graph validation ─────────────────────────────────────────────── */
 
-export function validate(graph: PlexusGraph, devices: Device[]): Problem[] {
+/**
+ * Everything wrong with this graph, worst first.
+ *
+ * `unavailable` maps a node type to what this runtime needs before it can
+ * bind one — `/api/health`, which the editor asks on connect. Empty for the
+ * simulator, and empty when the answer is not known, so an editor talking to
+ * nothing behaves as it always did.
+ */
+export function validate(
+  graph: PlexusGraph,
+  devices: Device[],
+  unavailable: Record<string, string> = {},
+): Problem[] {
   const problems: Problem[] = [];
   const active = graph.nodes.filter((n) => !n.disabled);
 
@@ -196,6 +208,7 @@ export function validate(graph: PlexusGraph, devices: Device[]): Problem[] {
   problemsFromDevices(active, devices, problems);
   problemsFromHosts(graph, active, problems);
   problemsFromTiming(graph, active, problems);
+  problemsFromSupport(active, unavailable, problems);
 
   return problems;
 }
@@ -579,6 +592,30 @@ export function chainLatency(graph: PlexusGraph, startId: string): number {
   }
 
   return total;
+}
+
+/**
+ * Nodes this runtime cannot bind.
+ *
+ * An error, because arming will fail on it — and it used to fail *at* Run,
+ * after the card had been opened, with the reason arriving on the relay
+ * thread. The runtime knew the answer before the graph was drawn.
+ */
+function problemsFromSupport(
+  active: PlexusNode[],
+  unavailable: Record<string, string>,
+  out: Problem[],
+): void {
+  for (const node of active) {
+    const needs = unavailable[node.type];
+    if (!needs) continue;
+    out.push({
+      code: "node-unavailable",
+      level: "error",
+      nodeId: node.id,
+      message: t("check.nodeUnavailable", { node: nodeLabel(node), needs }),
+    });
+  }
 }
 
 function problemsFromTiming(

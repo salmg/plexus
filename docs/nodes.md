@@ -10,6 +10,16 @@ a graph and refuses at bind time, naming what it wants. `plexus nodes` prints
 the same list from the code, so it cannot drift from this page's claims —
 trust the command over the table if they ever disagree.
 
+The editor asks the same question of whichever runtime it is connected to, and
+answers it in two places: a node it cannot bind is dimmed in the palette with
+what it needs, and a graph that uses one is an error in the checks rather than
+a failure after Run. Both say the sentence you see here, because both come from
+the table the refusal comes from.
+
+None of that applies to the simulator, which invents traffic for anything — so
+on a laptop with nothing plugged in, every node is drawable and runnable, and
+that is the point of it.
+
 ---
 
 ## Terminal side — nodes that only ask

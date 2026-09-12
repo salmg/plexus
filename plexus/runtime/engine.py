@@ -799,7 +799,26 @@ def node_implementations() -> Dict[str, str]:
     return out
 
 
-__all__ = ["Engine", "EngineError", "node_implementations"]
+def node_requirements() -> Dict[str, str]:
+    """
+    What each node this build cannot bind is waiting on.
+
+    The same tables `build` raises from, so the sentence a palette shows
+    before you drag a node in and the sentence `arm` gives you afterwards
+    are the same sentence.
+    """
+    out: Dict[str, str] = {}
+    out.update(card_nodes.PENDING)
+    out.update(terminal_nodes.PENDING)
+    return out
+
+
+__all__ = [
+    "Engine",
+    "EngineError",
+    "node_implementations",
+    "node_requirements",
+]
 
 
 # Silence the unused-import warning for a name kept for callers' convenience.

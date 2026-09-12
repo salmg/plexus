@@ -37,6 +37,7 @@ type ServerFrame =
   | { type: "apdu"; event: ApduEvent }
   | { type: "log"; line: LogLine }
   | { type: "devices"; devices: Device[] }
+  | { type: "implementations"; needs: Record<string, string> }
   | { type: "result"; id: string; lines: string[]; level?: "info" | "error" }
   | { type: "error"; message: string }
   | { type: "batch"; frames: ServerFrame[] };
@@ -91,6 +92,7 @@ export class WebSocketRuntime implements Runtime {
     this.closing = false;
     await this.dial();
   }
+
 
   disconnect(): void {
     this.closing = true;
@@ -236,6 +238,15 @@ export class WebSocketRuntime implements Runtime {
         return;
       case "devices":
         handlers.onDevices(frame.devices);
+        return;
+      case "implementations":
+        handlers.onUnavailable(
+          Object.fromEntries(
+            Object.entries(frame.needs ?? {}).filter(
+              ([, reason]) => typeof reason === "string",
+            ),
+          ),
+        );
         return;
       case "result": {
         const waiting = this.pending.get(frame.id);

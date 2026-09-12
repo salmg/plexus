@@ -100,9 +100,35 @@
 }
 
 .palette__item-title {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   font-weight: 500;
+}
+
+/*
+ * A node this runtime cannot bind.
+ *
+ * Dimmed and marked, not disabled: you can still draw a rig for hardware you
+ * have not plugged in yet, or for a machine that is not this one. The file is
+ * the document and it outlives whichever runtime happens to be answering.
+ *
+ * The dimming is on the text rather than the whole button, so the class colour
+ * on the left border — the thing that says what the node *is* — stays legible.
+ */
+.palette__item--unavailable .palette__item-title,
+.palette__item--unavailable .palette__item-summary,
+.palette__item--unavailable .palette__item-icon {
+  opacity: 0.55;
+}
+
+.palette__item-mark {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warn);
 }
 
 .palette__item-summary {

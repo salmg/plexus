@@ -134,10 +134,14 @@ export default function App() {
   // `t` changes identity when the locale does, which is what re-runs the
   // validator: it writes sentences people read, so its output is language.
   const t = useT();
-  // `t` is not called here, but its identity changes with the locale and the
-  // validator writes language. Dropping it leaves the checks in the old one.
-  // oxlint-disable-next-line react-hooks/exhaustive-deps
-  const problems = useMemo(() => validate(graph, devices), [graph, devices, t]);
+  const unavailable = useRuntime((s) => s.unavailable);
+  const problems = useMemo(
+    () => validate(graph, devices, unavailable),
+    // `t` is not called here, but its identity changes with the locale and the
+    // validator writes language. Dropping it leaves the checks in the old one.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [graph, devices, unavailable, t],
+  );
 
   return (
     <div className="shell">

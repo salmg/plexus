@@ -64,6 +64,9 @@ const esChrome: Record<MessageKey, string> = {
   "palette.title": "Paleta",
   "palette.filter": "Filtrar nodos",
   "palette.empty": "Ningún nodo coincide con «{query}».",
+  "palette.needs": "Necesita {needs}. Este runtime no puede enlazarlo.",
+  "palette.unavailable":
+    "Este runtime no puede enlazar este nodo. Necesita {needs}. Puedes dibujarlo igualmente: el archivo sobrevive al runtime que esté respondiendo.",
   "palette.class.terminal": "Lado del terminal",
   "palette.class.transform": "Transformaciones",
   "palette.class.card": "Lado de la tarjeta",
@@ -178,6 +181,8 @@ const esChrome: Record<MessageKey, string> = {
     "{node} no tiene nada en su puerto {port}. Conéctalo a algo que responda.",
   "check.twoChains":
     "Este grafo tiene {count} cadenas separadas: {nodes}. Plexus ejecuta una cada vez, y ejecutaría la que empieza en {running}.",
+  "check.nodeUnavailable":
+    "Este runtime no puede enlazar {node}. Necesita {needs}.",
   "check.unwiredOob":
     "{node} no tiene nada en su puerto {port}, así que dejará pasar el tráfico sin inyectar nada.",
   "check.unwiredResponder": "Nadie le pregunta nada a {node}. Se quedará inactivo.",

@@ -46,7 +46,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from plexus.api.session import PROTOCOL_VERSION, ProtocolMismatch, Runtime, Session
-from plexus.runtime import node_implementations
+from plexus.runtime import node_implementations, node_requirements
 
 log = logging.getLogger(__name__)
 
@@ -222,6 +222,10 @@ def create_app() -> FastAPI:
             {
                 "protocol": PROTOCOL_VERSION,
                 "nodes": node_implementations(),
+                # Why, not just whether. Without this the editor could grey
+                # a node out and not say what it wanted, which is worse
+                # than not greying it at all.
+                "needs": node_requirements(),
                 "authenticated": bool(os.environ.get(TOKEN_VARIABLE)),
             }
         )

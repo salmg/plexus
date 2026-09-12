@@ -18,12 +18,16 @@ import type { NodeType } from "../catalogue/types";
 import { useT } from "../i18n";
 import { classLabel, nodeSummary, nodeTitle } from "../i18n/catalogue";
 import { useGraph } from "../store/useGraph";
+import { useRuntime } from "../store/useRuntime";
 import { PALETTE_DRAG_TYPE } from "../canvas/Canvas";
 
 export function Palette() {
   const t = useT();
   const addNode = useGraph((s) => s.addNode);
   const nodeCount = useGraph((s) => s.graph.nodes.length);
+  // What the runtime on the other end cannot bind. Empty for the
+  // simulator, which invents traffic for anything.
+  const unavailable = useRuntime((s) => s.unavailable);
   const [query, setQuery] = useState("");
 
   const groups = useMemo(() => {
@@ -75,26 +79,49 @@ export function Palette() {
             className={`palette__group palette__group--${group.cls}`}
           >
             <h2 className="panel-section__title">{group.label}</h2>
-            {group.items.map((type) => (
-              <button
-                key={type.key}
-                type="button"
-                className={`palette__item palette__item--${type.nodeClass}`}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData(PALETTE_DRAG_TYPE, type.key);
-                  e.dataTransfer.effectAllowed = "copy";
-                }}
-                onClick={() => addNode(type.key, placeAt(nodeCount))}
-                title={nodeSummary(type)}
-              >
-                <Icon name={type.icon} className="palette__item-icon" />
-                <span className="palette__item-body">
-                  <span className="palette__item-title">{nodeTitle(type)}</span>
-                  <span className="palette__item-summary">{nodeSummary(type)}</span>
-                </span>
-              </button>
-            ))}
+            {group.items.map((type) => {
+              // Marked, not disabled. You can still draw a rig for hardware
+              // you have not plugged in yet, or for a machine that is not
+              // this one — the file is the document, and it outlives the
+              // runtime that happens to be answering right now.
+              const needs = unavailable[type.key];
+              return (
+                <button
+                  key={type.key}
+                  type="button"
+                  className={`palette__item palette__item--${type.nodeClass}${
+                    needs ? " palette__item--unavailable" : ""
+                  }`}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData(PALETTE_DRAG_TYPE, type.key);
+                    e.dataTransfer.effectAllowed = "copy";
+                  }}
+                  onClick={() => addNode(type.key, placeAt(nodeCount))}
+                  title={
+                    needs
+                      ? t("palette.unavailable", { needs })
+                      : nodeSummary(type)
+                  }
+                >
+                  <Icon name={type.icon} className="palette__item-icon" />
+                  <span className="palette__item-body">
+                    <span className="palette__item-title">
+                      {nodeTitle(type)}
+                      {needs && (
+                        <i
+                          className="palette__item-mark"
+                          aria-label={t("palette.unavailable", { needs })}
+                        />
+                      )}
+                    </span>
+                    <span className="palette__item-summary">
+                      {needs ? t("palette.needs", { needs }) : nodeSummary(type)}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </section>
         ))}
 

@@ -132,6 +132,10 @@ export class MockRuntime implements Runtime {
   async connect(handlers: RuntimeHandlers): Promise<void> {
     this.handlers = handlers;
     handlers.onDevices(DEVICES);
+    // Nothing is unavailable here: the simulator invents traffic for any
+    // node, which is the point of it. Saying so explicitly means switching
+    // from a real runtime back to this one clears the marks.
+    handlers.onUnavailable({});
     this.log("info", "plexus", "Simulated runtime. No hardware is bound.");
   }
 

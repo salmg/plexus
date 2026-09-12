@@ -1,5 +1,10 @@
 """The engine that runs a graph, and the events it emits."""
 
-from plexus.runtime.engine import Engine, EngineError, node_implementations  # noqa: F401
+from plexus.runtime.engine import (  # noqa: F401
+    Engine,
+    EngineError,
+    node_implementations,
+    node_requirements,
+)
 
-__all__ = ["Engine", "EngineError", "node_implementations"]
+__all__ = ["Engine", "EngineError", "node_implementations", "node_requirements"]
