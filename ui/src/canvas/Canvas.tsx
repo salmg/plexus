@@ -34,6 +34,8 @@ import { useLayout } from "../store/useLayout";
 import { useRuntime } from "../store/useRuntime";
 import { ContextMenu } from "./ContextMenu";
 import type { MenuItem, MenuState } from "./ContextMenu";
+import { usePlacement } from "./placement";
+import type { DropTarget } from "./placement";
 import { NODE_HEIGHT, NODE_WIDTH, PlexusNodeView } from "./PlexusNode";
 import type { PlexusNodeData } from "./PlexusNode";
 
@@ -295,16 +297,58 @@ export function Canvas({ problems }: CanvasProps) {
     [disconnect],
   );
 
+  /**
+   * Drop a node onto the canvas, centred on where it was aimed.
+   *
+   * The one placement path — the palette's click, its desktop drag and its
+   * touch drag all reach here, so all three respect the current pan and zoom.
+   * A bare click aims at the visible centre and fans successive adds a little,
+   * so clicking a type five times gives five nodes you can tell apart rather
+   * than a pile.
+   */
+  const place = useCallback(
+    (key: string, at: DropTarget) => {
+      if (!nodeType(key)) return;
+      const el = wrapper.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+
+      let point: { x: number; y: number };
+      if (at === "center") {
+        const fan = (useGraph.getState().graph.nodes.length % 6) * 28;
+        point = { x: rect.left + rect.width / 2 + fan, y: rect.top + rect.height / 2 + fan };
+      } else {
+        point = at;
+      }
+
+      const f = screenToFlowPosition(point);
+      addNode(key, {
+        x: Math.round(f.x - NODE_WIDTH / 2),
+        y: Math.round(f.y - NODE_HEIGHT / 2),
+      });
+    },
+    [addNode, screenToFlowPosition],
+  );
+
+  const canvasRect = useCallback(
+    () => wrapper.current?.getBoundingClientRect() ?? null,
+    [],
+  );
+
+  // Hand the placement path to the palette, which sits outside this provider.
+  useEffect(() => {
+    usePlacement.getState().register(place, canvasRect);
+    return () => usePlacement.getState().register(null, null);
+  }, [place, canvasRect]);
+
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
       const key = event.dataTransfer.getData(PALETTE_DRAG_TYPE);
-      if (!key || !nodeType(key)) return;
-      const at = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-      // Drop where the pointer is, not where the node's corner would land.
-      addNode(key, { x: Math.round(at.x - 90), y: Math.round(at.y - 40) });
+      if (!key) return;
+      place(key, { x: event.clientX, y: event.clientY });
     },
-    [addNode, screenToFlowPosition],
+    [place],
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {

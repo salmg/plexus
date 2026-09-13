@@ -11,6 +11,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { CLASS_ORDER, NODE_TYPES } from "../catalogue";
 import { Icon } from "../catalogue/icons";
@@ -20,11 +21,15 @@ import { classLabel, nodeSummary, nodeTitle } from "../i18n/catalogue";
 import { useGraph } from "../store/useGraph";
 import { useRuntime } from "../store/useRuntime";
 import { PALETTE_DRAG_TYPE } from "../canvas/Canvas";
+import { usePlacement } from "../canvas/placement";
+import { usePaletteDrag } from "./usePaletteDrag";
 
 export function Palette() {
   const t = useT();
   const addNode = useGraph((s) => s.addNode);
   const nodeCount = useGraph((s) => s.graph.nodes.length);
+  const place = usePlacement((s) => s.place);
+  const { onPointerDown, consumeClick, ghost } = usePaletteDrag();
   // What the runtime on the other end cannot bind. Empty for the
   // simulator, which invents traffic for anything.
   const unavailable = useRuntime((s) => s.unavailable);
@@ -97,7 +102,15 @@ export function Palette() {
                     e.dataTransfer.setData(PALETTE_DRAG_TYPE, type.key);
                     e.dataTransfer.effectAllowed = "copy";
                   }}
-                  onClick={() => addNode(type.key, placeAt(nodeCount))}
+                  onPointerDown={(e) => onPointerDown(e, type.key)}
+                  onClick={() => {
+                    // A drag that ended on this item fires a click too; the
+                    // node was already placed where it was dropped, so ignore it
+                    // rather than adding a second at the centre.
+                    if (consumeClick()) return;
+                    if (place) place(type.key, "center");
+                    else addNode(type.key, placeAt(nodeCount));
+                  }}
                   title={
                     needs
                       ? t("palette.unavailable", { needs })
@@ -142,6 +155,28 @@ export function Palette() {
           {t("legend.terminalPort")}
         </span>
       </footer>
+
+      {/* The thing under the finger during a touch drag. In a portal on the
+          body so the rail's own scroll and overflow cannot clip it, and
+          pointer-transparent so it never eats the release. */}
+      {ghost &&
+        createPortal(
+          (() => {
+            const gt = NODE_TYPES.find((n) => n.key === ghost.key);
+            if (!gt) return null;
+            return (
+              <div
+                className={`palette__ghost${ghost.valid ? " palette__ghost--valid" : ""}`}
+                style={{ left: ghost.x, top: ghost.y }}
+                aria-hidden="true"
+              >
+                <Icon name={gt.icon} className="palette__item-icon" />
+                <span className="palette__ghost-title">{nodeTitle(gt)}</span>
+              </div>
+            );
+          })(),
+          document.body,
+        )}
     </aside>
   );
 }

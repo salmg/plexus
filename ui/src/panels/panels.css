@@ -311,3 +311,43 @@
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-faint);
 }
+
+/* ── Touch drag ghost ────────────────────────────────────────────────────────
+ *
+ * What follows the finger when a palette item is dragged on a touch screen.
+ * Rendered in a portal on the body (see Palette), so it is placed against the
+ * viewport and never clipped by the rail. Pointer-transparent so the release
+ * lands on the canvas underneath, not on the ghost.
+ */
+.palette__ghost {
+  position: fixed;
+  z-index: 60;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  padding: 8px 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px -8px rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+/* Over the canvas — a release here will drop. The accent border says so. */
+.palette__ghost--valid {
+  opacity: 0.95;
+  border-color: var(--accent);
+  box-shadow: 0 8px 28px -8px rgba(0, 0, 0, 0.55), 0 0 0 2px var(--accent-wash);
+}
+
+.palette__ghost-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
