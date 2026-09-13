@@ -7,7 +7,7 @@
  * instead, with a sentence saying why.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { FILE_EXTENSION, fromYaml, GraphParseError, toYaml } from "../graph/serialize";
 import type { Problem } from "../graph/validate";
@@ -17,25 +17,50 @@ import type { PlexusGraph } from "../graph/types";
 import { LOCALES, LOCALE_NAMES, tn, useLocale, useT } from "../i18n";
 import { ImportReview } from "./ImportReview";
 import { useGraph } from "../store/useGraph";
+import { useLayout } from "../store/useLayout";
 import { isRunning, useRuntime } from "../store/useRuntime";
 
 interface TopBarProps {
   problems: Problem[];
-  consoleOpen: boolean;
-  onToggleConsole: () => void;
-  inspectorOpen: boolean;
-  onToggleInspector: () => void;
 }
 
-export function TopBar({
-  problems,
-  consoleOpen,
-  onToggleConsole,
-  inspectorOpen,
-  onToggleInspector,
-}: TopBarProps) {
+export function TopBar({ problems }: TopBarProps) {
   const t = useT();
   const [locale, setLocale] = useLocale();
+
+  const paletteOpen = useLayout((s) => s.palette);
+  const inspectorOpen = useLayout((s) => s.inspector);
+  const consoleOpen = useLayout((s) => s.console);
+  const narrow = useLayout((s) => s.narrow);
+  const toggle = useLayout((s) => s.toggle);
+
+  // Below `narrow` there is not room for eight controls and Run, and Run is
+  // not the one that gives way. The rest move into a menu behind one button.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menu = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (event: MouseEvent) => {
+      if (!menu.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  // Opening a panel from the menu closes the menu: on a phone it covers the
+  // thing it just opened.
+  const show = (panel: "palette" | "inspector" | "console") => {
+    toggle(panel);
+    setMenuOpen(false);
+  };
 
   const graph = useGraph((s) => s.graph);
   const dirty = useGraph((s) => s.dirty);
@@ -97,6 +122,123 @@ export function TopBar({
     }
   };
 
+  /**
+   * Everything that is not the wordmark, the badges, or Run.
+   *
+   * One list, rendered inline on a wide bar and inside a sheet on a narrow
+   * one — rather than two lists that drift, so a control added here reaches a
+   * phone without anybody remembering to add it twice.
+   */
+  const controls = (
+    <>
+      <button
+        type="button"
+        className="btn btn--ghost"
+        onClick={undo}
+        disabled={!canUndo}
+        title={t("topbar.undo")}
+      >
+        {t("topbar.undo")}
+      </button>
+      <button
+        type="button"
+        className="btn btn--ghost"
+        onClick={redo}
+        disabled={!canRedo}
+        title={t("topbar.redo")}
+      >
+        {t("topbar.redo")}
+      </button>
+
+      <button
+        type="button"
+        className="btn"
+        onClick={() => {
+          fileInput.current?.click();
+          setMenuOpen(false);
+        }}
+      >
+        {t("topbar.open")}
+      </button>
+      <button
+        type="button"
+        className="btn"
+        onClick={() => {
+          save();
+          setMenuOpen(false);
+        }}
+      >
+        {t("topbar.save")}
+      </button>
+      <button
+        type="button"
+        className="btn"
+        onClick={() => {
+          setGraph(emptyGraph(), { clean: true });
+          setMenuOpen(false);
+        }}
+      >
+        {t("topbar.new")}
+      </button>
+
+      <button
+        type="button"
+        className="btn btn--ghost"
+        onClick={() => show("palette")}
+        aria-pressed={paletteOpen}
+        title={t("topbar.palette.title")}
+      >
+        {t("topbar.palette")}
+      </button>
+
+      <button
+        type="button"
+        className="btn btn--ghost"
+        onClick={() => show("console")}
+        aria-pressed={consoleOpen}
+        title={t("topbar.console.title")}
+      >
+        {t("topbar.console")}
+      </button>
+
+      <button
+        type="button"
+        className="btn btn--ghost"
+        onClick={() => show("inspector")}
+        aria-pressed={inspectorOpen}
+        title={t("topbar.inspector.title")}
+      >
+        {t("topbar.inspector")}
+      </button>
+
+      {/* A select rather than a flag: a flag is a country, and a language is
+          not. Two entries today, and it stays right at more. */}
+      <select
+        className="select topbar__locale"
+        value={locale}
+        onChange={(e) => setLocale(e.target.value as typeof locale)}
+        aria-label={t("topbar.language")}
+        title={t("topbar.language")}
+      >
+        {LOCALES.map((code) => (
+          <option key={code} value={code}>
+            {LOCALE_NAMES[code]}
+          </option>
+        ))}
+      </select>
+
+      <button
+        type="button"
+        className="btn btn--ghost btn--icon"
+        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        aria-label={t(theme === "dark" ? "topbar.theme.toLight" : "topbar.theme.toDark")}
+        title={t(theme === "dark" ? "topbar.theme.toLight" : "topbar.theme.toDark")}
+      >
+        {theme === "dark" ? "☾" : "☀"}
+      </button>
+    </>
+  );
+
   return (
     <header className="topbar">
       {/* The wordmark is the credit. A product's own name is the thing people
@@ -145,28 +287,24 @@ export function TopBar({
         )}
       </span>
 
-      <button
-        type="button"
-        className="btn btn--ghost"
-        onClick={undo}
-        disabled={!canUndo}
-        title={t("topbar.undo")}
-      >
-        {t("topbar.undo")}
-      </button>
-      <button
-        type="button"
-        className="btn btn--ghost"
-        onClick={redo}
-        disabled={!canRedo}
-        title={t("topbar.redo")}
-      >
-        {t("topbar.redo")}
-      </button>
+      {narrow ? (
+        <div className="topbar__menu" ref={menu}>
+          <button
+            type="button"
+            className="btn btn--ghost btn--icon"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-expanded={menuOpen}
+            aria-label={t("topbar.more")}
+            title={t("topbar.more")}
+          >
+            ☰
+          </button>
+          {menuOpen && <div className="topbar__sheet">{controls}</div>}
+        </div>
+      ) : (
+        controls
+      )}
 
-      <button type="button" className="btn" onClick={() => fileInput.current?.click()}>
-        {t("topbar.open")}
-      </button>
       <input
         ref={fileInput}
         type="file"
@@ -178,62 +316,6 @@ export function TopBar({
           e.target.value = "";
         }}
       />
-      <button type="button" className="btn" onClick={save}>
-        {t("topbar.save")}
-      </button>
-      <button
-        type="button"
-        className="btn"
-        onClick={() => setGraph(emptyGraph(), { clean: true })}
-      >
-        {t("topbar.new")}
-      </button>
-
-      <button
-        type="button"
-        className="btn btn--ghost"
-        onClick={onToggleConsole}
-        aria-pressed={consoleOpen}
-        title={t("topbar.console.title")}
-      >
-        {t("topbar.console")}
-      </button>
-
-      <button
-        type="button"
-        className="btn btn--ghost"
-        onClick={onToggleInspector}
-        aria-pressed={inspectorOpen}
-        title={t("topbar.inspector.title")}
-      >
-        {t("topbar.inspector")}
-      </button>
-
-      {/* A select rather than a flag: a flag is a country, and a language is
-          not. Two entries today, and it stays right at more. */}
-      <select
-        className="select topbar__locale"
-        value={locale}
-        onChange={(e) => setLocale(e.target.value as typeof locale)}
-        aria-label={t("topbar.language")}
-        title={t("topbar.language")}
-      >
-        {LOCALES.map((code) => (
-          <option key={code} value={code}>
-            {LOCALE_NAMES[code]}
-          </option>
-        ))}
-      </select>
-
-      <button
-        type="button"
-        className="btn btn--ghost btn--icon"
-        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-        aria-label={t(theme === "dark" ? "topbar.theme.toLight" : "topbar.theme.toDark")}
-        title={t(theme === "dark" ? "topbar.theme.toLight" : "topbar.theme.toDark")}
-      >
-        {theme === "dark" ? "☾" : "☀"}
-      </button>
 
       {running ? (
         <button type="button" className="btn btn--danger" onClick={() => void stop()}>

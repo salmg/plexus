@@ -12,7 +12,8 @@
  * often enough that choosing light mode did not survive a reload.
  */
 
-export const CONSOLE_KEY = "plexus.console-open";
+// The panels keep their own keys next to the store that owns them, in
+// `useLayout.ts`. The theme is here because two modules read it.
 export const THEME_KEY = "plexus.theme";
 
 export function remembered(key: string): string | null {

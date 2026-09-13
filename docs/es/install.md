@@ -197,6 +197,13 @@ puede ejecutar** un Python de la Microsoft Store — sale `Permission denied`, q
 se lee exactamente igual que si no estuviera instalado. Usa PowerShell, o un
 Python de python.org.
 
+**Móviles y tabletas.** El editor se adapta. Por debajo de 1100px el inspector
+se abre sobre el lienzo en vez de al lado, y por debajo de 760px también lo
+hacen la paleta y la consola — de una en una, y se quitan tocando el lienzo o
+con `Esc`. La barra superior pliega sus controles en un menú cuando dejan de
+caber, y Ejecutar nunca deja de caber. El lienzo hace zoom con dos dedos, con la
+rueda, con un toque doble o con los botones de la esquina.
+
 **La mitad del hardware necesita Linux.** No es cosa de Plexus: ahí viven
 `pcscd`, `vpcd` y `simtrace2-remsim`, y la propia guía de atrium lo da por
 supuesto. Dibujar y comprobar un grafo se hace en cualquier sitio; armarlo, allí

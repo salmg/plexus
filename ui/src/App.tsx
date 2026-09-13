@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 
 import { Canvas } from "./canvas/Canvas";
@@ -8,8 +8,9 @@ import { useLocale, useT } from "./i18n";
 import { Console } from "./panels/Console";
 import { Inspector } from "./panels/Inspector";
 import { Palette } from "./panels/Palette";
-import { CONSOLE_KEY, remember, remembered, THEME_KEY } from "./store/remember";
+import { remember, THEME_KEY } from "./store/remember";
 import { useGraph } from "./store/useGraph";
+import { useLayout, useMeasureLayout } from "./store/useLayout";
 import { useRuntime } from "./store/useRuntime";
 import { CONTACTLESS_RELAY } from "./examples";
 
@@ -21,14 +22,6 @@ import { CONTACTLESS_RELAY } from "./examples";
  */
 const GRID_STEP = 18;
 
-
-/**
- * Below this the three columns leave the canvas too little to be worth
- * drawing on, so the inspector folds away.  It stays reachable from the top
- * bar — hiding it is a default, not a decision taken for the user.
- */
-const INSPECTOR_MIN_WIDTH = 1100;
-
 export default function App() {
   const theme = useGraph((s) => s.theme);
   const [locale] = useLocale();
@@ -37,24 +30,24 @@ export default function App() {
   const setGraph = useGraph((s) => s.setGraph);
   const init = useRuntime((s) => s.init);
 
-  const [consoleOpen, setConsoleOpen] = useState(
-    () => remembered(CONSOLE_KEY) !== "0",
-  );
-  const [inspectorOpen, setInspectorOpen] = useState(
-    () => window.innerWidth >= INSPECTOR_MIN_WIDTH,
-  );
+  const paletteOpen = useLayout((s) => s.palette);
+  const inspectorOpen = useLayout((s) => s.inspector);
+  const consoleOpen = useLayout((s) => s.console);
+  const compact = useLayout((s) => s.compact);
+  const inspectorOverlay = useLayout((s) => s.inspectorOverlay);
+  const closeDrawers = useLayout((s) => s.closeDrawers);
+  useMeasureLayout();
 
-  // Follow the window only while the user has not taken over: once they toggle
-  // the inspector themselves, resizing stops second-guessing them.
-  const [inspectorPinned, setInspectorPinned] = useState(false);
-
+  // Escape closes a drawer, because a panel covering the canvas needs a way out
+  // that is not hunting for the button that opened it.
   useEffect(() => {
-    if (inspectorPinned) return;
-    const onResize = () =>
-      setInspectorOpen(window.innerWidth >= INSPECTOR_MIN_WIDTH);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [inspectorPinned]);
+    if (!inspectorOverlay) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeDrawers();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [inspectorOverlay, closeDrawers]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -67,10 +60,6 @@ export default function App() {
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
-
-  useEffect(() => {
-    remember(CONSOLE_KEY, consoleOpen ? "1" : "0");
-  }, [consoleOpen]);
 
   useEffect(() => {
     void init();
@@ -143,27 +132,32 @@ export default function App() {
     [graph, devices, unavailable, t],
   );
 
+  // A panel is a column only where there is room for one; everywhere else it
+  // is a drawer over the canvas, and the canvas keeps the full width. That
+  // matters for more than looks: React Flow lays out against its container, so
+  // a canvas that narrows every time a panel opens re-fits the graph under
+  // whoever is reading it.
+  const paletteDocked = paletteOpen && !compact;
+  const inspectorDocked = inspectorOpen && !inspectorOverlay;
+
+  const columns =
+    (paletteDocked ? "" : " shell__body--no-palette") +
+    (inspectorDocked ? "" : " shell__body--no-inspector") +
+    (compact ? " shell__body--compact" : "") +
+    (inspectorOverlay ? " shell__body--inspector-over" : "");
+
+  // Something is covering the canvas, so there has to be a way back to it.
+  const covered =
+    (compact && (paletteOpen || consoleOpen)) || (inspectorOverlay && inspectorOpen);
+
   return (
     <div className="shell">
-      <TopBar
-        problems={problems}
-        consoleOpen={consoleOpen}
-        onToggleConsole={() => setConsoleOpen((v) => !v)}
-        inspectorOpen={inspectorOpen}
-        onToggleInspector={() => {
-          setInspectorPinned(true);
-          setInspectorOpen((v) => !v);
-        }}
-      />
+      <TopBar problems={problems} />
 
-      <div
-        className={`shell__body${inspectorOpen ? "" : " shell__body--no-inspector"}`}
-      >
-        <Palette />
+      <div className={`shell__body${columns}`}>
+        {paletteOpen && <Palette />}
 
-        <div
-          className="shell__centre"
-        >
+        <div className="shell__centre">
           <ReactFlowProvider>
             <Canvas problems={problems} />
           </ReactFlowProvider>
@@ -171,6 +165,17 @@ export default function App() {
         </div>
 
         {inspectorOpen && <Inspector problems={problems} />}
+
+        {/* One backdrop for whichever drawer is open — they open one at a
+            time. A tap anywhere on the canvas puts the work back. */}
+        {covered && (
+          <button
+            type="button"
+            className="scrim"
+            onClick={closeDrawers}
+            aria-label={t("layout.close")}
+          />
+        )}
       </div>
     </div>
   );

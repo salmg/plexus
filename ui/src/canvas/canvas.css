@@ -55,6 +55,30 @@
   fill: var(--text);
 }
 
+/* Room for a thumb. These are the controls used while holding the device in
+   one hand, and they are the whole of "zoom" for anyone not pinching. */
+@media (max-width: 700px) {
+  .react-flow__controls-button {
+    width: 30px;
+    height: 30px;
+  }
+}
+
+@media (pointer: coarse) {
+  .react-flow__controls-button {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* A 150px overview of a canvas barely wider than itself, sitting exactly where
+   a thumb rests. See the note in `tokens.css` about which width this is. */
+@media (max-width: 900px) {
+  .react-flow__minimap {
+    display: none;
+  }
+}
+
 .react-flow__minimap {
   background: var(--surface-raised);
   border: 1px solid var(--border);

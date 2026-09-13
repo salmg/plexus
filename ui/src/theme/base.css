@@ -39,7 +39,10 @@ body {
 
 .shell {
   display: grid;
-  grid-template-rows: var(--topbar-height) minmax(0, 1fr);
+  /* `auto`, not a fixed height: the top bar is allowed to wrap to a second row
+     when the controls do not fit, and a fixed row would cut that second line
+     off. `--topbar-height` is its minimum, so nothing moves at full width. */
+  grid-template-rows: minmax(var(--topbar-height), auto) minmax(0, 1fr);
   height: 100%;
 }
 
@@ -51,6 +54,104 @@ body {
 
 .shell__body--no-inspector {
   grid-template-columns: var(--rail-width) minmax(0, 1fr);
+}
+
+.shell__body--no-palette {
+  grid-template-columns: minmax(0, 1fr) var(--inspector-width);
+}
+
+.shell__body--no-palette.shell__body--no-inspector {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/*
+ * Drawers.
+ *
+ * Two thresholds, not one, because a tablet is not a big phone. The inspector
+ * overlays from 1100px down — three columns below that leave the canvas about
+ * 300px — while the palette and the console stay docked to 760, because you
+ * reach for the palette constantly and summoning it every time is worse than a
+ * narrow canvas. `useLayout.ts` decides; these two classes position.
+ */
+.shell__body--compact,
+.shell__body--inspector-over {
+  position: relative;
+  /* A drawer is off the edge for the first frames of its slide, and without
+     this the document grows sideways and the whole page gets a scrollbar for
+     the length of the animation. */
+  overflow: hidden;
+}
+
+.shell__body--compact > .rail,
+.shell__body--inspector-over > .rail--right {
+  position: absolute;
+  inset-block: 0;
+  z-index: 20;
+  width: min(85vw, 300px);
+  box-shadow: 0 0 40px -6px rgba(0, 0, 0, 0.5);
+  animation: drawer-in 160ms ease-out;
+}
+
+.shell__body--compact > .rail:not(.rail--right) {
+  inset-inline-start: 0;
+}
+
+.shell__body--compact > .rail--right,
+.shell__body--inspector-over > .rail--right {
+  inset-inline-end: 0;
+  animation-name: drawer-in-right;
+}
+
+/* The console is a sheet along the bottom rather than a side drawer: it is
+   read in lines, and a 300px-wide terminal wraps every one of them. */
+.shell__body--compact .shell__centre > .console {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
+  flex-basis: auto;
+  height: min(60%, var(--console-height));
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 40px -12px rgba(0, 0, 0, 0.5);
+  animation: sheet-in 160ms ease-out;
+}
+
+/*
+ * Twelve pixels, not a hundred percent.
+ *
+ * A drawer that slides the whole way in is only in the right place once the
+ * animation has finished, which makes the animation load-bearing: frozen at
+ * its first frame — a throttled tab, a stalled compositor — the panel sits off
+ * the side of the screen and the button that opened it looks dead. Measured
+ * exactly that way in a pane that had stopped painting: `x: -300`, animation
+ * `running`, `currentTime: 0`.
+ *
+ * Starting 12px out means the worst case is a panel 12px off-centre, which
+ * nobody can see and everybody can use. The opacity does the visible work.
+ */
+@keyframes drawer-in {
+  from { transform: translateX(-12px); opacity: 0.4; }
+}
+
+@keyframes drawer-in-right {
+  from { transform: translateX(12px); opacity: 0.4; }
+}
+
+@keyframes sheet-in {
+  from { transform: translateY(12px); opacity: 0.4; }
+}
+
+/* The way out of an open drawer, and the only thing under it that is clickable. */
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  border: 0;
+  padding: 0;
+  background: rgba(9, 17, 26, 0.5);
+  cursor: pointer;
+  /* No fade, for the same reason: a scrim frozen at `opacity: 0` is an
+     invisible sheet of glass over the canvas. */
 }
 
 /*
@@ -141,14 +242,30 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  padding: 4px 12px;
   background: var(--surface-raised);
   border-bottom: 1px solid var(--border);
-  /* Run and Stop live at the right-hand end. Without this the bar grows past
-   * the window at narrow widths and takes them off screen, which is the one
-   * control that must never be unreachable. */
   min-width: 0;
+  min-height: var(--topbar-height);
+
+  /*
+   * Run and Stop live at the right-hand end and must never be unreachable.
+   * `overflow: hidden` alone kept the bar inside the window by *clipping*, and
+   * measured at 768px in Spanish the controls wanted 1054px — so the thing
+   * being clipped was Run.
+   *
+   * Two things fix it between them, and neither is a guess about which button
+   * matters least. The graph name below shrinks to nothing before anything is
+   * clipped, which covers every width where the controls themselves still fit.
+   * Below that they do not fit at any name width, and the bar folds into one
+   * menu button — at 1060, which is the measured 1054 with a little air.
+   *
+   * Wrapping was the other candidate and is worse: it keeps every control
+   * visible but moves Run onto a second row, away from the end of the bar the
+   * whole arrangement points at.
+   */
   overflow: hidden;
+  flex-wrap: nowrap;
 }
 
 .topbar__brand {
@@ -157,6 +274,12 @@ body {
   gap: 7px;
   font-weight: 500;
   letter-spacing: 0.02em;
+  /* Neither shrinks nor wraps. Left to itself it folded the tagline under the
+     wordmark at 1280 and stood 55px tall, which pushed the whole bar to 64 —
+     the row is `auto` now, so a tall child is a taller bar rather than a
+     clipped one. The graph name is what gives way here. */
+  flex: none;
+  white-space: nowrap;
 }
 
 .topbar__brand small {
@@ -166,6 +289,9 @@ body {
 }
 
 .topbar__name {
+  /* The elastic one. It gives up its width, an ellipsis at a time, so that no
+     control has to give up existing. */
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 260px;
   overflow: hidden;
@@ -178,6 +304,37 @@ body {
 
 .topbar__spacer {
   flex: 1;
+}
+
+/* The overflow menu, hung off the bar itself so it follows the bar's real
+   height rather than a token that stops being true the moment it wraps. */
+.topbar__menu {
+  display: flex;
+  position: relative;
+}
+
+.topbar__sheet {
+  position: absolute;
+  top: calc(100% + 8px);
+  inset-inline-end: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: min(15rem, calc(100vw - 16px));
+  padding: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.55);
+}
+
+.topbar__sheet .btn,
+.topbar__sheet .select {
+  width: 100%;
+  justify-content: flex-start;
+  height: 34px;
 }
 
 /* ── Controls ─────────────────────────────────────────────────────────── */
@@ -639,4 +796,35 @@ a.topbar__brand:hover small {
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+}
+
+/* ── Touch and small screens ──────────────────────────────────
+ *
+ * Here rather than in `tokens.css` because these are component rules and this
+ * file is imported after that one. Written there, they lost to the `.btn`
+ * height a few hundred lines above and came out 28px on a phone.
+ */
+
+@media (max-width: 700px) {
+  .topbar {
+    padding: 4px 8px;
+    gap: 4px;
+  }
+}
+
+/* A 28px control is a miss for a finger, whatever the width of the screen. */
+@media (pointer: coarse) {
+  .btn,
+  .select {
+    height: 34px;
+  }
+
+  .btn--icon {
+    width: 34px;
+  }
+
+  .topbar__sheet .btn,
+  .topbar__sheet .select {
+    height: 38px;
+  }
 }

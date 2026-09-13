@@ -247,3 +247,25 @@
     padding: 0 7px;
   }
 }
+
+/*
+ * Tokens only below this line, and that is not tidiness.
+ *
+ * This file is imported before `base.css` and `canvas.css`, so a component
+ * rule written here loses to any rule of equal specificity in either of them.
+ * Measured: touch-sized controls declared here came out 24px and 28px, because
+ * `canvas.css` and `base.css` set those sizes further down the cascade. Tokens
+ * do not have the problem — a `var()` is resolved wherever it is used — so
+ * they belong here and component overrides belong beside their component.
+ */
+@media (max-width: 900px) {
+  :root {
+    --console-height: 220px;
+  }
+}
+
+@media (max-width: 700px) {
+  :root {
+    --topbar-height: 48px;
+  }
+}

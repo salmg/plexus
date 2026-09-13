@@ -189,6 +189,13 @@ a second.
 execute a Microsoft Store Python — it reports `Permission denied`, which reads
 exactly like absence. Use PowerShell, or a `python.org` install.
 
+**Phones and tablets.** The editor lays out for them. Below 1100px the
+inspector opens over the canvas instead of beside it, and below 760px so do the
+palette and the console — one at a time, with a tap anywhere on the canvas or
+`Esc` to put them away. The top bar folds its controls into one menu where they
+stop fitting, and Run never does. The canvas zooms with a pinch, a wheel, a
+double-tap, or the buttons in its corner.
+
 **The hardware half needs Linux.** Not Plexus's doing — that is where `pcscd`,
 `vpcd` and `simtrace2-remsim` live, and atrium's own setup guide assumes it.
 You can draw and check a graph anywhere; you arm it where the readers are.

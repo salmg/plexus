@@ -94,6 +94,26 @@ export function Canvas({ problems }: CanvasProps) {
   const [mode, setMode] = useState<"pan" | "select">("pan");
 
   /**
+   * A finger, rather than a mouse.
+   *
+   * It decides two things the canvas cannot get right otherwise. Select mode
+   * pans with `[1, 2]` — the middle and right mouse buttons — which a touch
+   * device does not have, so a finger on the canvas would do nothing at all.
+   * And rubber-band selection needs a second pointer to pan with, which it
+   * also does not have.
+   *
+   * Read once: a pointer does not change type under a running session, and a
+   * listener here would re-render the canvas for nothing.
+   */
+  const coarse = useMemo(
+    () =>
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(pointer: coarse)").matches,
+    [],
+  );
+
+  /**
    * Fit the graph once, when there is something to fit it into.
    *
    * React Flow's own `fitView` prop runs on mount, before the layout has given
@@ -303,9 +323,16 @@ export function Canvas({ problems }: CanvasProps) {
         defaultEdgeOptions={{ type: "default" }}
         minZoom={0.25}
         maxZoom={2}
+        // Stated rather than left to the defaults, because they are the whole
+        // of "the work zone zooms": the wheel and a trackpad pinch on a
+        // desktop, two fingers on a touch screen, a double-tap either way, and
+        // the +/− controls bottom-left for anyone who wants a button.
+        zoomOnScroll
+        zoomOnPinch
+        zoomOnDoubleClick
         deleteKeyCode={["Backspace", "Delete"]}
-        selectionOnDrag={mode === "select"}
-        panOnDrag={mode === "select" ? [1, 2] : true}
+        selectionOnDrag={mode === "select" && !coarse}
+        panOnDrag={coarse || mode !== "select" ? true : [1, 2]}
         selectionMode={SelectionMode.Partial}
         selectNodesOnDrag={false}
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
@@ -328,26 +355,31 @@ export function Canvas({ problems }: CanvasProps) {
         />
 
         <Panel position="top-left" className="tools">
-          <div className="tools__group" role="group" aria-label={t("canvas.tool")}>
-            <button
-              type="button"
-              className={`tools__btn${mode === "pan" ? " is-on" : ""}`}
-              onClick={() => setMode("pan")}
-              aria-pressed={mode === "pan"}
-              title={t("canvas.pan.title")}
-            >
-              {t("canvas.pan")}
-            </button>
-            <button
-              type="button"
-              className={`tools__btn${mode === "select" ? " is-on" : ""}`}
-              onClick={() => setMode("select")}
-              aria-pressed={mode === "select"}
-              title={t("canvas.select.title")}
-            >
-              {t("canvas.select")}
-            </button>
-          </div>
+          {/* Not offered to a finger: with no second pointer to pan with,
+              select mode would be pan mode wearing another label. Tapping a
+              node still selects it. */}
+          {!coarse && (
+            <div className="tools__group" role="group" aria-label={t("canvas.tool")}>
+              <button
+                type="button"
+                className={`tools__btn${mode === "pan" ? " is-on" : ""}`}
+                onClick={() => setMode("pan")}
+                aria-pressed={mode === "pan"}
+                title={t("canvas.pan.title")}
+              >
+                {t("canvas.pan")}
+              </button>
+              <button
+                type="button"
+                className={`tools__btn${mode === "select" ? " is-on" : ""}`}
+                onClick={() => setMode("select")}
+                aria-pressed={mode === "select"}
+                title={t("canvas.select.title")}
+              >
+                {t("canvas.select")}
+              </button>
+            </div>
+          )}
 
           {selection.length > 0 && (
             <div className="tools__group tools__group--selection">
