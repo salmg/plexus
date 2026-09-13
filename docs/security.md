@@ -30,13 +30,21 @@ own browser, on someone else's instructions.
 The Origin header is now checked against an allow-list:
 
 - **loopback origins** — `http://localhost:5173`, `http://127.0.0.1:…` — the
-  editor.
+  editor, whether it came from `npm run dev` or from the runtime itself.
+  `plexus up` serves both halves on one origin, so on loopback the page driving
+  the runtime *is* a loopback origin and nothing needs saying.
 - **anything in `PLEXUS_ALLOWED_ORIGINS`**, comma separated.
 - **a missing Origin** is allowed, because that is a native client — the CLI, a
   script, a test. A browser always sends one and a page cannot forge it, so
   this check is exactly as strong as the browser's own guarantee.
 - **`Origin: null`** is refused. That is a sandboxed iframe or a `file://`
   page, which nothing legitimate does here and a hostile embed does.
+
+**Serving a page does not make it trusted.** Bind beyond loopback and the
+editor the runtime served is refused until its origin is named, same as any
+other — `PLEXUS_ALLOWED_ORIGINS=http://rig.local:8900`. Special-casing it would
+mean trusting "this request's Host says `rig.local`", which is a claim about
+DNS and precisely the rebinding shape this check exists to catch.
 
 ## No graph can reach outside its workspace
 

@@ -83,6 +83,11 @@ They meet over one WebSocket, specified in
 [PROTOCOL.md](../PROTOCOL.md). The top bar always says which runtime is
 answering, so a simulated result is never mistaken for a card.
 
+`plexus up` runs both from one origin, which is why getting started is one
+command and why there is no address to paste: the editor asks the origin it was
+loaded from. They still separate — the editor alone on a simulator, the runtime
+alone under the CLI.
+
 ## Being straight about what is finished
 
 - The editor is finished enough to use, in English and Spanish.

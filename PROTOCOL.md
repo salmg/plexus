@@ -12,6 +12,14 @@ simulator works against a card.
 
 The editor dials `ws://<host>:<port>/ws` and sends `hello` first.
 
+Which host and port, when nothing says? `?runtime=` in the URL wins, then
+`VITE_PLEXUS_RUNTIME` from the build. With neither, the editor asks its own
+origin for `/api/health`: a reply carrying a numeric `protocol` means a runtime
+served this page, and the socket is `ws` beside it — `wss://` if the page came
+over HTTPS. No reply, and it stays on the simulator. That probe is why
+`plexus up` needs no address pasted anywhere, and why an editor opened from a
+file or a static host is quietly simulated rather than broken.
+
 ```json
 { "type": "hello", "version": 1 }
 ```
@@ -74,11 +82,16 @@ The editor greys those nodes in the palette and refuses to arm a graph that
 uses one, so a rig that cannot run says so before it opens a reader instead
 of after.
 
-It travels on the socket rather than over `/api/health`, which carries the
-same answer from the same function. The editor is served from a different
-port, so a fetch to health is cross-origin and the browser will not let the
-page read the reply; this socket is already open and has already passed the
-Origin check. Health is for whoever is holding a terminal.
+It travels on the socket rather than over `/api/health`, which carries the same
+answer from the same function. Whether that fetch is even readable depends on
+where the editor came from: served by the runtime it is same-origin and works,
+which is how the editor finds the runtime in the first place; served by a dev
+server on another port it is cross-origin with no CORS behind it, and the
+browser will not let the page read the reply. Measured, by a palette that
+marked nothing.
+
+The socket has neither problem — it is already open and has already passed the
+Origin check — so the answer rides on it and no panel depends on the fetch.
 
 ### A finished terminal is not a stopped runtime
 

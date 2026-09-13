@@ -8,13 +8,14 @@ want a real card on the other end.
 ## The shape of it
 
 ```
-  browser                     the rig (Linux, readers attached)
-  ┌──────────────┐            ┌─────────────────────────────────┐
-  │ the editor   │  ws://…    │ plexus serve                    │
-  │ :5173        │ ─────────► │  ├─ the engine                  │
-  └──────────────┘            │  ├─ plexus/adapters → atrium     │
-                              │  └─ pcscd, vpcd, simtrace2-remsim│
-                              └─────────────────────────────────┘
+  your laptop              the rig (Linux, readers attached)
+  ┌───────────┐            ┌───────────────────────────────────┐
+  │ a browser │            │ plexus up                         │
+  │           │  ws://…    │  ├─ the editor, served from here  │
+  │           │  ───────►  │  ├─ the engine                    │
+  └───────────┘            │  ├─ plexus/adapters → atrium      │
+                           │  └─ pcscd, vpcd, simtrace2-remsim │
+                           └───────────────────────────────────┘
 ```
 
 The editor never touches hardware. It sends a graph; the runtime re-checks it,
@@ -22,8 +23,21 @@ binds what it names, and streams back what crosses.
 
 ## Start the runtime
 
+On the rig, one command serves the editor beside it:
+
 ```bash
 pip install -e ".[runtime]"
+plexus up
+```
+
+The top bar swaps **simulated** for the runtime's address. That badge is the
+only thing standing between a simulated result and a claim about a card, so it
+is always on screen.
+
+To drive the rig from an editor somewhere else — a dev server, or a copy you
+already have open — start the runtime on its own and use the URL it prints:
+
+```bash
 plexus serve
 ```
 
@@ -32,23 +46,22 @@ Plexus runtime on ws://127.0.0.1:8900/ws
 Point the editor at it:  http://localhost:5173/?runtime=ws://127.0.0.1:8900/ws
 ```
 
-Open the second URL. The top bar swaps **simulated** for the runtime's address.
-That badge is the only thing standing between a simulated result and a claim
-about a card, so it is always on screen.
-
 ### Across machines
 
 The readers are rarely on the laptop with the browser. Two options, and the
 first is better:
 
-**Tunnel it.** Leave `serve` on loopback and forward the port:
+**Tunnel it.** Leave the runtime on loopback and forward the port:
 
 ```bash
 ssh -L 8900:127.0.0.1:8900 you@rig
 ```
 
-Then point the editor at `ws://127.0.0.1:8900/ws` as if it were local. Nothing
-is exposed and nothing needs configuring.
+Then open <http://127.0.0.1:8900/> on the laptop. `plexus up` on the rig served
+the editor; the tunnel makes it local; and every check on the far end sees
+loopback, for the Host header and the Origin alike. Nothing is exposed, no
+token is needed, and there is nothing to configure. This is the arrangement to
+reach for.
 
 **Or bind it, with a token.** `serve` **refuses to start** on a non-loopback
 address without one:
@@ -62,6 +75,13 @@ plexus serve --host 0.0.0.0
 
 Then `?runtime=ws://rig.local:8900/ws?token=…`. Read
 [What it refuses](security.md) before doing this.
+
+If you use `plexus up` rather than `serve` here, the editor is served *from the
+rig*, so the origin to allow is the runtime's own address —
+`PLEXUS_ALLOWED_ORIGINS=http://rig.local:8900`. **The runtime does not trust a
+page merely because it served it.** That is deliberate: "the page came from
+this address" is a claim about DNS, and the allow-list is where an operator
+says which names they meant. `tests/test_security.py` pins it.
 
 ## The workspace
 

@@ -175,9 +175,11 @@ pip install -e ".[dev]"
 pytest
 ```
 
-212 tests. They cover the model, the checks, the engine end to end against a
-recorded capture, the WebSocket protocol, what an install gets that a clone
-hides, and every hole that has been found and closed.
+They cover the model, the checks, the engine end to end against a recorded
+capture, the WebSocket protocol, what an install gets that a clone hides, and
+every hole that has been found and closed. The count is deliberately not quoted
+here — it said 90 for a long time after it was 212, and `pytest -q` answers in
+a second.
 
 ---
 

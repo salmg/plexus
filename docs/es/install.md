@@ -182,9 +182,11 @@ pip install -e ".[dev]"
 pytest
 ```
 
-212 pruebas: el modelo, las comprobaciones, el motor de punta a punta contra una
+Cubren el modelo, las comprobaciones, el motor de punta a punta contra una
 captura grabada, el protocolo WebSocket, lo que recibe quien instala y un clon
-esconde, y cada agujero que se ha encontrado y cerrado.
+esconde, y cada agujero que se ha encontrado y cerrado. El número no se pone
+aquí a propósito — puso 90 durante mucho tiempo después de ser 212, y
+`pytest -q` lo contesta en un segundo.
 
 ---
 

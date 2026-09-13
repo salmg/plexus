@@ -147,6 +147,27 @@ def test_an_origin_can_be_allowed_deliberately(monkeypatch):
     assert not origin_ok("https://other.example.com")
 
 
+def test_serving_the_editor_does_not_make_its_origin_trusted(monkeypatch):
+    """
+    `plexus up` serves the editor from the runtime, so on loopback the page's
+    origin is loopback and it connects. Bound to a name it is not, and it still
+    has to be named.
+
+    Tempting to special-case: the page came from this very server, so why ask?
+    Because "this request's Host says rig.local" is a claim about DNS, not about
+    who served the page — that is exactly the rebinding shape the Origin check
+    exists to catch. The allow-list stays the place an operator says which names
+    they meant, and `docs/hardware.md` says so for the `--host` case.
+    """
+    monkeypatch.delenv(server_module.ORIGINS_VARIABLE, raising=False)
+
+    assert origin_ok("http://127.0.0.1:8900"), "the loopback case, which is `up`"
+    assert not origin_ok("http://rig.local:8900"), "served from here, still asked"
+
+    monkeypatch.setenv(server_module.ORIGINS_VARIABLE, "http://rig.local:8900")
+    assert origin_ok("http://rig.local:8900")
+
+
 def test_a_hostile_origin_is_closed_before_anything_is_accepted():
     with TestClient(create_app()) as client:
         with pytest.raises(WebSocketDisconnect):

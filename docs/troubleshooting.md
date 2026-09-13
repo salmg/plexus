@@ -149,10 +149,15 @@ refused a websocket from origin 'https://…'
 ```
 
 The Origin allow-list is loopback plus `PLEXUS_ALLOWED_ORIGINS`. If the editor
-is served from another host, name it there.
+is served from another host, name it there — including when that host is the
+runtime itself, which is the `plexus up --host` case. Serving the page does not
+trust it.
 
-Then check `?runtime=` actually reached the app — the top bar shows the address
-it is talking to, and still says **simulated** if the parameter was dropped.
+Then check which runtime the editor thinks it is talking to. The top bar shows
+the address, and still says **simulated** if it found nothing. With `plexus up`
+there is no `?runtime=` involved: the editor asks the origin it was loaded
+from, so a **simulated** badge on `http://127.0.0.1:8900/` means `/api/health`
+did not answer — look for a second runtime already holding the port.
 
 ### The trace goes quiet but Stop is still offered
 
