@@ -787,13 +787,16 @@ def node_implementations() -> Dict[str, str]:
     Derived from the node modules rather than a list kept beside them, so it
     cannot drift from what would really happen at bind time.
     """
+    # `pending()` rather than the `PENDING` constant: the agent's answer depends
+    # on whether a model is configured here, not on how the build was made.
+    terminal_pending = terminal_nodes.pending()
     out: Dict[str, str] = {}
     for node_type in CATALOGUE:
         key = node_type.key
         if node_type.node_class == "card":
             out[key] = "pending" if key in card_nodes.PENDING else "ready"
         elif node_type.node_class == "terminal":
-            out[key] = "pending" if key in terminal_nodes.PENDING else "ready"
+            out[key] = "pending" if key in terminal_pending else "ready"
         else:
             out[key] = "ready"
     return out
@@ -809,7 +812,7 @@ def node_requirements() -> Dict[str, str]:
     """
     out: Dict[str, str] = {}
     out.update(card_nodes.PENDING)
-    out.update(terminal_nodes.PENDING)
+    out.update(terminal_nodes.pending())
     return out
 
 

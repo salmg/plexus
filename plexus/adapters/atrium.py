@@ -71,6 +71,17 @@ def atrium_candidates() -> list[Path]:
 VENDOR = atrium_candidates()[0]
 
 
+def atrium_present() -> bool:
+    """
+    Is there an atrium checkout to import, without importing it?
+
+    A plain filesystem check, no ``sys.path`` mutation and nothing cached — so
+    it is safe to call from an availability probe that runs on every graph
+    edit, where ``require_atrium`` (which does mutate the path) would not be.
+    """
+    return any((p / "transport" / "base.py").is_file() for p in atrium_candidates())
+
+
 class AtriumUnavailable(RuntimeError):
     """Atrium is not where it should be, or a piece of it will not import."""
 
@@ -167,3 +178,34 @@ class _ExecuteHolder:
 
     def execute(self, apdu):
         return self._call(apdu)
+
+
+def resolve_llm_provider(name: str = "", model: str = "") -> Any:
+    """
+    Atrium's language-model provider, chosen by name and configured from the
+    environment.
+
+    The one door to the AI agent. ``name`` is a catalogue value —
+    ``anthropic``, ``openai`` or ``local`` — and an empty one lets atrium detect
+    whichever key is set. Atrium raises ``ProviderUnavailable`` with a message
+    that already names the exact variable to set, so it is worth more than
+    anything this layer could write; it is re-raised verbatim as
+    ``AtriumUnavailable`` so callers above never import an atrium type.
+    """
+    require_atrium()
+    try:
+        from llm_provider import (  # type: ignore[import-not-found]
+            ProviderError,
+            resolve_provider,
+        )
+    except ImportError as exc:  # pragma: no cover - only if atrium moves
+        raise AtriumUnavailable(
+            f"atrium's llm_provider will not import: {exc}"
+        ) from exc
+
+    try:
+        return resolve_provider(name or None, model or None)
+    except ProviderError as exc:
+        # ProviderUnavailable (no key/SDK) and ProviderError (a bad request)
+        # both land here; the message is atrium's and is user-facing.
+        raise AtriumUnavailable(str(exc)) from exc

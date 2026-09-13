@@ -109,7 +109,9 @@ A graph cannot widen it for you. That is the point.
 
 **This is the honest part of this page.** The engine binds, drives, rewrites,
 reports and releases — but the only card it can bind today is a recorded
-capture, and the only terminal is the fingerprint probe.
+capture, and the terminals are the fingerprint probe and the EMV agent, the
+agent only once a model back end is configured (`ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, or a local `ATRIUM_LLM_BASE_URL`).
 
 Every other node **resolves in a graph and refuses at bind time, naming what it
 needs**:

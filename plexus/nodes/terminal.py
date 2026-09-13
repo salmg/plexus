@@ -14,7 +14,10 @@ software can do alone.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Callable, Dict, List, Optional
+
+from plexus.adapters import atrium as _atrium
 
 # `tlv_walk` and `find_all` live in `tlv.py`: the trace tap decodes the same
 # bytes this probe does, and one walker is the only way those two stay
@@ -227,14 +230,193 @@ def read_records(gpo_response: bytes, deep: bool = False) -> List[bytes]:
 
     return commands
 
+# ── The EMV agent ─────────────────────────────────────────────────────────────
+#
+# A terminal whose next command is decided by a language model rather than a
+# fixed script. It is atrium's agent idea, narrowed to the one role a Plexus
+# node fills: the party that asks. The model gets one action — send an APDU —
+# and the card's own reply straight back, so it drives the conversation the way
+# a terminal does, reasoning about each answer instead of following a script.
+
+#: When the node's task field is left blank.
+_DEFAULT_TASK = "Identify this card: its applications and what each supports."
+
+_AGENT_SYSTEM = (
+    "You are driving a smartcard the way a terminal does, for authorised EMV "
+    "security research on a card the operator owns or has written permission to "
+    "test. You have one action: send an APDU and read the reply. Work one "
+    "command at a time and reason about each response before the next.\n\n"
+    "Standard EMV discovery is: SELECT PPSE (2PAY.SYS.DDF01), SELECT each AID it "
+    "lists, GET PROCESSING OPTIONS, then READ RECORD across the AFL. Call finish "
+    "when the task is done or the card stops answering usefully."
+)
+
+_AGENT_TOOLS = [
+    {
+        "name": "send_apdu",
+        "description": (
+            "Send one command APDU to the card and get its response. `apdu` is a "
+            "hex string, e.g. 00A404000E325041592E5359532E444446303100. The reply "
+            "gives the full response hex, the status word, and whether it was 9000."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "apdu": {"type": "string", "description": "Command APDU as hex."},
+            },
+            "required": ["apdu"],
+        },
+    },
+    {
+        "name": "finish",
+        "description": (
+            "Call when the task is complete. Give a short, plain-language summary "
+            "of what the card is and what you found."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string", "description": "What you concluded."},
+            },
+            "required": [],
+        },
+    },
+]
+
+
+class EmvAgentTerminal:
+    """
+    A synthetic terminal driven by a language model.
+
+    A terminal owns the loop, so this one does too: `drive` calls the model,
+    runs whatever `send_apdu` it asks for against the chain, feeds the answers
+    back, and repeats until the model calls `finish`, the card is stopped, or a
+    ceiling is hit. The ceilings are the point — a model that will not stop still
+    stops here, at a bounded number of turns and of commands.
+    """
+
+    #: Model turns, and total commands, before `drive` returns regardless.
+    MAX_STEPS = 40
+    MAX_COMMANDS = 120
+
+    def __init__(self, config: Dict[str, Any], provider: Any) -> None:
+        self.task = str(config.get("task") or "").strip() or _DEFAULT_TASK
+        self.brute_sfi = bool(config.get("bruteSfi"))
+        self._provider = provider
+        self.sent = 0
+        self._notes: List[str] = []
+
+    def drive(self, channel, stop: Callable[[], bool]) -> None:
+        self._provider.begin(_AGENT_SYSTEM, self._opening())
+
+        for _ in range(self.MAX_STEPS):
+            if stop():
+                return
+            turn = self._provider.complete(_AGENT_TOOLS)
+            if getattr(turn, "text", "").strip():
+                self._notes.append(turn.text.strip())
+            if not turn.wants_tools:
+                return
+
+            results = []
+            for call in turn.tool_calls:
+                if stop():
+                    return
+                if call.name == "finish":
+                    note = str(call.input.get("summary", "")).strip()
+                    if note:
+                        self._notes.append(note)
+                    return
+                results.append((call.id, self._send(call, channel)))
+                if self.sent >= self.MAX_COMMANDS:
+                    self._notes.append(
+                        "Reached the %d-command ceiling; stopping." % self.MAX_COMMANDS
+                    )
+                    return
+            self._provider.add_tool_results(results)
+
+        self._notes.append("Reached the %d-turn ceiling; stopping." % self.MAX_STEPS)
+
+    def _send(self, call: Any, channel) -> Dict[str, Any]:
+        if call.name != "send_apdu":
+            return {"error": "unknown tool %r" % call.name}
+        raw = str(call.input.get("apdu", "")).replace(" ", "")
+        try:
+            command = bytes.fromhex(raw)
+        except ValueError:
+            return {"error": "apdu was not valid hex: %r" % raw}
+        if not command:
+            return {"error": "apdu was empty"}
+
+        response = channel.transmit(command)
+        self.sent += 1
+        return {
+            "response": response.hex().upper(),
+            "sw": response[-2:].hex().upper() if len(response) >= 2 else "",
+            "ok": succeeded(response),
+        }
+
+    def _opening(self) -> str:
+        extra = (
+            " Sweep the SFI range even where the AFL does not mention it."
+            if self.brute_sfi
+            else ""
+        )
+        return "Task: %s.%s" % (self.task, extra)
+
+    def summary(self) -> List[str]:
+        plural = "" if self.sent == 1 else "s"
+        lines = ["EMV agent: %d command%s sent." % (self.sent, plural)]
+        lines.extend(self._notes)
+        return lines
+
+
 # ── The rest ────────────────────────────────────────────────────────────────
 
+#: Terminal nodes this build cannot bind at all — they need hardware or a daemon.
+#: The agent is *not* here: its code exists, and whether it binds depends on
+#: whether a model is configured, which `pending()` decides at the moment asked.
 PENDING = {
     "acr122u.target": "pyscard, an ACR122U, and atrium's PN532 emulator",
     "simtrace2": "a SimTrace2 and simtrace2-remsim running in a root shell",
     "vpcd": "virtualsmartcard, with vpcd loaded into pcscd",
-    "agent": "a configured model back end and atrium's agent loop",
 }
+
+#: Environment that means *some* model back end is configured. Any one will do;
+#: atrium works out which and says exactly what is missing if the guess is wrong.
+_AGENT_ENV = (
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "ATRIUM_LLM_BASE_URL",
+    "ATRIUM_LLM_PROVIDER",
+)
+
+
+def agent_pending_reason() -> Optional[str]:
+    """Why the agent cannot bind here, or None when it can."""
+    if not _atrium.atrium_present():
+        return "atrium's agent loop and a model back end"
+    if not any(os.environ.get(v) for v in _AGENT_ENV):
+        return (
+            "a model back end — set ANTHROPIC_API_KEY, OPENAI_API_KEY, "
+            "or ATRIUM_LLM_BASE_URL"
+        )
+    return None
+
+
+def pending() -> Dict[str, str]:
+    """
+    The static hardware gaps, plus the agent when no model is configured.
+
+    A function rather than the `PENDING` constant, because the agent's answer
+    depends on the environment the runtime is in, not on how the build was made.
+    """
+    out = dict(PENDING)
+    reason = agent_pending_reason()
+    if reason is not None:
+        out["agent"] = reason
+    return out
+
 
 def build(node_type: str, config: Dict[str, Any]):
     """
@@ -249,6 +431,15 @@ def build(node_type: str, config: Dict[str, Any]):
     """
     if node_type == "probe":
         return FingerprintProbe(depth=str(config.get("depth") or "standard"))
+    if node_type == "agent":
+        # Resolving the provider validates the key and the SDK, so a missing
+        # model is refused at bind with atrium's own actionable message rather
+        # than faulting on the worker thread mid-conversation.
+        try:
+            provider = _atrium.resolve_llm_provider(str(config.get("provider") or ""))
+        except _atrium.AtriumUnavailable as exc:
+            raise TerminalUnavailable(str(exc)) from exc
+        return EmvAgentTerminal(config, provider)
     if node_type in PENDING:
         raise TerminalUnavailable(
             "The %s node is not implemented in this build. It needs %s."
