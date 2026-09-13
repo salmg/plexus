@@ -3,21 +3,20 @@
 Build a working relay from nothing, run it, and reach into it — on a laptop,
 with no reader and no card. Ten minutes.
 
-You need **both halves** running — the editor and the runtime:
+You need the runtime, not just the editor:
 
 ```bash
-cd ui && npm run dev            # one terminal
-pip install -e ".[runtime]"     # another
-plexus serve
+pip install -e ".[runtime]"     # once
+plexus up
 ```
 
-Then open the URL `serve` prints, the one with `?runtime=` in it. The top
-bar should say `127.0.0.1:8900/ws` rather than **simulated**.
+The browser it opens should say `127.0.0.1:8900/ws` in the top bar rather than
+**simulated**.
 
 The editor alone ships a simulator, and the simulator is enough to draw a
 graph and watch invented traffic cross it. It is not enough for this guide:
 from step 4 on, the card is a *file*, and reading a file is the runtime's
-job. See [Install](install.md) steps 2 and 3.
+job. See [Install](install.md).
 
 ---
 

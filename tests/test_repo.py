@@ -171,15 +171,25 @@ def test_the_catalogue_is_inside_the_package_and_not_beside_it():
     assert inside.parts[0] == "schema"
 
 
-def test_pyproject_says_the_catalogue_is_package_data():
+def test_pyproject_says_what_the_package_carries():
     """
-    Belt to the braces above. setuptools includes it today by default; saying
-    so means a change to that default fails here rather than in someone's
-    `pip install`.
+    Belt to the braces above. setuptools includes the catalogue today by
+    default; saying so means a change to that default fails here rather than in
+    someone's `pip install`.
+
+    The editor bundle is not a default at all — `plexus/web` is build output
+    and is not tracked, so only this entry puts it in a wheel. A wheel built
+    without it still installs and `plexus up` still says what to do; a wheel
+    built with it needs no Node on the far end. Silently shipping neither is
+    the case worth failing on.
     """
     text = (REPO / "pyproject.toml").read_text(encoding="utf-8")
-    assert "[tool.setuptools.package-data]" in text
-    assert 'plexus = ["schema/*.json"]' in text
+    section = text.split("[tool.setuptools.package-data]", 1)
+    assert len(section) == 2, "no package-data section"
+    listed = re.split(r"^\[", section[1], maxsplit=1, flags=re.M)[0]
+
+    for pattern in ('"schema/*.json"', '"web/*"', '"web/assets/*"'):
+        assert pattern in listed, pattern
 
 
 def test_the_manual_names_every_field_the_inspector_shows():

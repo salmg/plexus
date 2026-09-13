@@ -3,21 +3,20 @@
 Monta un relé que funcione partiendo de cero, ejecútalo y métete dentro — en un
 portátil, sin lector y sin tarjeta. Diez minutos.
 
-Necesitas **las dos mitades** en marcha, el editor y el runtime:
+Necesitas el runtime, no sólo el editor:
 
 ```bash
-cd ui && npm run dev            # en un terminal
-pip install -e ".[runtime]"     # en otro
-plexus serve
+pip install -e ".[runtime]"     # una vez
+plexus up
 ```
 
-Abre luego la URL que imprime `serve`, la que lleva `?runtime=`. La barra
-superior debería poner `127.0.0.1:8900/ws` en vez de **simulated**.
+En el navegador que abre, la barra superior debería poner `127.0.0.1:8900/ws`
+en vez de **simulated**.
 
 El editor por sí solo trae un simulador, y con el simulador basta para
 dibujar un grafo y ver pasar tráfico inventado. Para esta guía no basta:
 desde el paso 4, la tarjeta es un *fichero*, y leer un fichero es cosa del
-runtime. Ver [Instalación](install.md), pasos 2 y 3.
+runtime. Ver [Instalación](install.md).
 
 ---
 

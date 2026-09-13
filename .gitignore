@@ -38,3 +38,8 @@ logs/
 # The PNGs it produces are committed; the inputs are not.
 ui/dist-docs/
 ui/scripts/.chrome-screenshots/
+
+# The editor, built into the package by `npm run build:bundle`. Output, not
+# source — `plexus up` serves it when it is there and says what to run when it
+# is not.
+plexus/web/

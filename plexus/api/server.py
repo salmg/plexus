@@ -40,10 +40,12 @@ import os
 import re
 import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional, Set
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from plexus.api.session import PROTOCOL_VERSION, ProtocolMismatch, Runtime, Session
 from plexus.runtime import node_implementations, node_requirements
@@ -179,6 +181,19 @@ async def _too_big(socket: WebSocket, size: int) -> None:
             "message": "Frame is %d bytes; the limit is %d." % (size, MAX_FRAME_BYTES),
         }
     )
+
+
+#: The built editor, when it is here.
+#:
+#: `npm run build:bundle` in ui/ writes it. A wheel carries it if it was built
+#: before packaging and does not if it was not, which is why everything that
+#: touches this asks rather than assumes — and why `plexus up` can tell you
+#: what to do instead when it is missing.
+WEB_ROOT = Path(__file__).resolve().parent.parent / "web"
+
+
+def editor_is_bundled() -> bool:
+    return (WEB_ROOT / "index.html").is_file()
 
 
 def create_app() -> FastAPI:
@@ -323,6 +338,30 @@ def create_app() -> FastAPI:
             # the promise in PROTOCOL.md is that a reconnecting editor finds it
             # still going. `stop`, or the process ending, releases it.
             await session.close()
+
+    # The editor, when it was built into the package.
+    #
+    # Mounted last, so `/ws` and `/api/*` above win: a mount at "/" catches
+    # everything that did not already match. `html=True` serves index.html for
+    # a bare path, which is what a single-page app needs.
+    #
+    # This is the whole point of `plexus up`. Served from here, the editor and
+    # the runtime share an origin — no CORS, no mixed content, no allow-list to
+    # configure, and no URL to paste. The two-process dance with `?runtime=`
+    # still works and is still what `npm run dev` does.
+    #
+    # Mounted whether or not the bundle is there yet, which is not fussiness:
+    # `app` below is built when this module is imported, and `plexus up` imports
+    # it in order to find WEB_ROOT before deciding to build the editor. Deciding
+    # the mount here meant deciding it against a directory that did not exist
+    # yet, and the freshly built editor 404ed. `check_dir=False` says the
+    # directory is allowed to be missing; a request for a file that is not there
+    # is a 404 either way.
+    app.mount(
+        "/",
+        StaticFiles(directory=str(WEB_ROOT), html=True, check_dir=False),
+        name="editor",
+    )
 
     return app
 

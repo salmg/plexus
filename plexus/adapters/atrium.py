@@ -20,13 +20,55 @@ not invent these shapes; it found them.
 
 from __future__ import annotations
 
+import os
 import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-#: The submodule, two levels up from this file.
-VENDOR = Path(__file__).resolve().parent.parent.parent / "vendor" / "atrium"
+#: Where an atrium checkout might be, best guess first.
+#:
+#: It used to be one path — the submodule, relative to this file — which is
+#: right for a clone and wrong for everything else. `pip install plexus` puts
+#: the package under site-packages, `vendor/` is not inside the package, and no
+#: wheel carries it: the installed `plexus` could read a graph and not run one,
+#: with an error naming a directory inside site-packages that nobody would ever
+#: create.
+#:
+#: Atrium is not vendored into the wheel because it is a separate project with
+#: its own history and its own licence to state. So it is looked for instead,
+#: and `PLEXUS_ATRIUM` is the answer when it lives somewhere unusual.
+ATRIUM_VARIABLE = "PLEXUS_ATRIUM"
+
+
+def atrium_candidates() -> list[Path]:
+    """Every place a checkout could be, in the order they are tried."""
+    here = Path(__file__).resolve().parent.parent.parent
+    cwd = Path.cwd()
+
+    out: list[Path] = []
+    configured = os.environ.get(ATRIUM_VARIABLE)
+    if configured:
+        out.append(Path(configured).expanduser())
+    out += [
+        here / "vendor" / "atrium",  # a clone of this repository
+        cwd / "vendor" / "atrium",  # run from the root of one
+        cwd / "atrium",  # a checkout beside the working directory
+        Path.home() / "atrium",
+    ]
+
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for path in out:
+        resolved = path.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(resolved)
+    return unique
+
+
+#: The first candidate, for a message that has to name one.
+VENDOR = atrium_candidates()[0]
 
 
 class AtriumUnavailable(RuntimeError):
@@ -42,21 +84,28 @@ def require_atrium() -> Path:
     twice.  The marker file is checked rather than the directory, because an
     uninitialised submodule is an empty directory that exists.
     """
-    marker = VENDOR / "transport" / "base.py"
-    if not marker.is_file():
+    found = next(
+        (p for p in atrium_candidates() if (p / "transport" / "base.py").is_file()),
+        None,
+    )
+    if found is None:
+        looked = "\n".join("    %s" % p for p in atrium_candidates())
         raise AtriumUnavailable(
-            f"No atrium checkout at {VENDOR}.\n"
-            "It is a submodule — fetch it with:\n"
-            "    git submodule update --init vendor/atrium"
+            "No atrium checkout found. Looked in:\n"
+            f"{looked}\n\n"
+            "Inside a clone of this repository:\n"
+            "    git submodule update --init vendor/atrium\n\n"
+            "Anywhere else, point at one:\n"
+            f"    {ATRIUM_VARIABLE}=/path/to/atrium"
         )
 
-    path = str(VENDOR)
+    path = str(found)
     if path not in sys.path:
         # Appended, not inserted: atrium has modules with plain names like
         # `util` and `transport`, and putting those ahead of the standard
         # library or the venv would be a trap set for some unrelated import.
         sys.path.append(path)
-    return VENDOR
+    return found
 
 
 def load_recorded_card(path: str | Path, strict: bool = False) -> Any:

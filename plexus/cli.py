@@ -19,7 +19,10 @@ need and refuse.
 from __future__ import annotations
 
 import argparse
+import shutil
+import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from plexus.catalogue import CATALOGUE, CatalogueError
@@ -50,6 +53,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Give up after this many seconds (default 120)",
     )
 
+    up = sub.add_parser(
+        "up", help="Serve the editor and the runtime together, and open it"
+    )
+    up.add_argument("--host", default="127.0.0.1")
+    up.add_argument("--port", type=int, default=8900)
+    up.add_argument(
+        "--no-open", action="store_true", help="Do not open a browser"
+    )
+    up.add_argument(
+        "--no-build",
+        action="store_true",
+        help="Never run npm, even when the editor has not been built yet",
+    )
+
     serve = sub.add_parser("serve", help="Run the runtime the editor connects to")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8900)
@@ -62,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "nodes":
             return _nodes()
+        if args.command == "up":
+            return _up(args.host, args.port, not args.no_open, not args.no_build)
         if args.command == "serve":
             return _serve(args.host, args.port, args.reload)
         graph = Graph.load(args.path)
@@ -113,6 +132,131 @@ def _show(graph: Graph) -> int:
 
     one_way = chain_latency(graph, steps[0].id)
     print(f"\n  {one_way} ms each way, {one_way * 2} ms out and back.")
+    return 0
+
+
+def _editor_source() -> Path | None:
+    """
+    The editor's source, if this copy has any.
+
+    A clone has `ui/` next to the package; an install from a wheel does not, and
+    the wheel either carried the built editor or it did not. Both places are
+    asked rather than assumed, for the same reason atrium's are: the layout that
+    holds in a clone is not the layout anyone else gets.
+    """
+    for base in (Path(__file__).resolve().parent.parent, Path.cwd()):
+        if (base / "ui" / "package.json").is_file():
+            return base / "ui"
+    return None
+
+
+def _build_editor(into: Path) -> bool:
+    """
+    Build the editor once, into the package that will serve it.
+
+    This command used to end at a paragraph telling you to run two npm commands
+    and try again, which is a strange thing for a program to do when it could
+    run them. It says what it is about to run, because `npm install` reaches the
+    network and nobody should learn that afterwards; `--no-build` is there for a
+    bench where that is not wanted.
+
+    Built into `into` rather than into the clone: with a non-editable install the
+    package doing the serving is in site-packages, and a bundle written beside
+    the source would be a build that appeared to work and changed nothing.
+    """
+    ui = _editor_source()
+    npm = shutil.which("npm")
+    if ui is None or npm is None:
+        return False
+
+    steps = []
+    if not (ui / "node_modules").is_dir():
+        steps.append([npm, "install"])
+
+    # `build:bundle` writes to `../plexus/web`, which is already `into` in a
+    # clone installed editable. Anywhere else the destination is appended, and
+    # the later `--outDir` is the one vite uses.
+    build = [npm, "run", "build:bundle"]
+    if (ui.parent / "plexus" / "web").resolve() != into.resolve():
+        build += ["--", "--outDir", str(into)]
+    steps.append(build)
+
+    print("The editor has not been built here yet. Building it once:")
+    for step in steps:
+        print("    npm %s" % " ".join(step[1:]))
+    print()
+
+    for step in steps:
+        if subprocess.run(step, cwd=str(ui)).returncode != 0:
+            print(file=sys.stderr)
+            print(
+                "That build failed. Run it yourself in ui/ to see why.",
+                file=sys.stderr,
+            )
+            return False
+
+    print()
+    return True
+
+
+def _up(host: str, port: int, open_browser: bool, build: bool = True) -> int:
+    """
+    One command: the editor and the runtime, on one origin.
+
+    Everything that made this awkward was a consequence of them being two
+    origins — CORS, mixed content, an allow-list to configure, and a URL with
+    `?runtime=` in it to paste. Served together there is nothing to configure
+    and nothing to paste, and the editor finds the runtime by asking the origin
+    it was loaded from.
+    """
+    import webbrowser
+
+    from plexus.api.server import WEB_ROOT, editor_is_bundled, serve
+
+    where = "http://%s:%d/" % (host, port)
+
+    if not editor_is_bundled() and build:
+        _build_editor(WEB_ROOT)
+
+    if not editor_is_bundled():
+        print("No editor to serve.", file=sys.stderr)
+        print(file=sys.stderr)
+        if _editor_source() is None:
+            print(
+                "This copy has no ui/ to build from. Clone the repository to get"
+                " one:",
+                file=sys.stderr,
+            )
+            print(
+                "    git clone --recurse-submodules"
+                " https://github.com/salmg/plexus",
+                file=sys.stderr,
+            )
+        else:
+            print("Build it once, then this command serves everything:", file=sys.stderr)
+            print("    cd ui && npm install && npm run build:bundle", file=sys.stderr)
+        print(file=sys.stderr)
+        print(
+            "Or keep the runtime here and use an editor you already have:",
+            file=sys.stderr,
+        )
+        print("    plexus serve", file=sys.stderr)
+        print(
+            "    then open  http://localhost:5173/?runtime=ws://%s:%d/ws"
+            % (host, port),
+            file=sys.stderr,
+        )
+        return 2
+
+    print("Plexus on %s" % where)
+    print("The editor and the runtime are both here. Ctrl-C to stop.")
+    if open_browser:
+        # After the server is listening, not before — a browser that arrives
+        # first gets a connection refused and a blank page, and the person
+        # reloads not knowing whether it worked.
+        threading.Timer(1.0, lambda: webbrowser.open(where)).start()
+
+    serve(host=host, port=port)
     return 0
 
 

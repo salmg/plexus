@@ -82,9 +82,9 @@ The Python side reads the catalogue the editor exports. Regenerate it:
 cd ui && npm run export:catalogue
 ```
 
-### `No atrium checkout at …/vendor/atrium`
+### `No atrium checkout found. Looked in: …`
 
-The submodule was not fetched:
+Inside a clone, the submodule was not fetched:
 
 ```bash
 git submodule update --init vendor/atrium
@@ -92,6 +92,31 @@ git submodule update --init vendor/atrium
 
 An uninitialised submodule is an **empty directory that exists**, which is why
 the check is for a file inside it rather than the directory.
+
+Anywhere else — a `pip install` has no `vendor/` and no wheel carries one, because
+atrium is a separate project with its own history and its own licence to state.
+Point at a checkout:
+
+```bash
+export PLEXUS_ATRIUM=/path/to/atrium
+```
+
+The message lists every path it tried, in order, so there is no guessing about
+which one to create.
+
+### `No editor to serve.`
+
+`plexus up` serves a built editor, and this copy has none. In a clone it builds
+one itself unless `--no-build` was passed or `npm` is not on the `PATH`:
+
+```bash
+cd ui && npm install && npm run build:bundle
+```
+
+From a wheel there is no `ui/` to build from, and the message says so rather
+than repeating advice that cannot be followed. Either clone the repository, or
+keep the two-process arrangement: `plexus serve` here, and an editor you
+already have pointed at it.
 
 ### `The pcsc node is not implemented in this build`
 

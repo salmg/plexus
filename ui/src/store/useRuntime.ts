@@ -57,6 +57,44 @@ function isLoopbackHost(hostname: string): boolean {
   );
 }
 
+/** Was the runtime named by a link or a build, rather than left to us? */
+function chosenExplicitly(): boolean {
+  return Boolean(
+    new URLSearchParams(window.location.search).get("runtime") ??
+      import.meta.env.VITE_PLEXUS_RUNTIME,
+  );
+}
+
+/**
+ * A runtime serving this very page.
+ *
+ * `plexus up` serves the editor and the runtime from one origin, so there is
+ * nothing to configure and nothing to paste: if `/api/health` answers here,
+ * the socket is here too.
+ *
+ * Same origin, which is the whole reason this works — the same probe against a
+ * runtime on another port is a cross-origin fetch with no CORS behind it, and
+ * the browser will not let the page read the reply. Tried once, on connect,
+ * and quiet when there is nothing there: an editor opened from a file or from
+ * a static host simply stays on the simulator.
+ */
+async function sameOriginRuntime(): Promise<Runtime | null> {
+  if (!window.location.protocol.startsWith("http")) return null;
+  try {
+    const response = await fetch("api/health", { credentials: "omit" });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    if (typeof body !== "object" || body === null) return null;
+    if (typeof (body as { protocol?: unknown }).protocol !== "number") return null;
+
+    const socket = new URL("ws", window.location.href);
+    socket.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return new WebSocketRuntime(socket.toString());
+  } catch {
+    return null;
+  }
+}
+
 function chooseRuntime(): Runtime {
   const fromQuery = new URLSearchParams(window.location.search).get("runtime");
   const raw = fromQuery ?? import.meta.env.VITE_PLEXUS_RUNTIME;
@@ -137,6 +175,13 @@ export const useRuntime = create<RuntimeState>((set, get) => ({
 
   init: async () => {
     if (get().connected) return;
+
+    // Nothing was named, so ask the origin this page came from. `plexus up`
+    // is on the other end of that question.
+    if (!chosenExplicitly()) {
+      const here = await sameOriginRuntime();
+      if (here) set({ runtime: here });
+    }
     await get().runtime.connect({
       onState: (state, detail) => set({ state, detail }),
 

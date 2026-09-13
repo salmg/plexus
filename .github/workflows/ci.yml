@@ -112,6 +112,67 @@ jobs:
           plexus nodes
           python -c "import plexus.catalogue as c; print(c.CATALOGUE_PATH); assert c.CATALOGUE_PATH.exists(); assert len(c.CATALOGUE.types) > 10"
 
+  # The one-command path, end to end, from outside the source tree.
+  #
+  # Nothing else here can catch this. `pip install .` proves the model half
+  # answers; the editor job proves the editor builds. Neither proves that the
+  # built editor ends up inside the wheel, or that the runtime serves it beside
+  # its own routes — and both of those were broken at different points: the
+  # bundle 404ed because `app` is built when the module is imported, which is
+  # before `up` has built anything.
+  one-command:
+    name: plexus up serves both halves
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the editor into the package
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build:bundle
+
+      - name: Install, not editable, so only package-data carries the bundle
+        run: pip install ".[runtime]"
+
+      - name: One command, from outside the source tree
+        # `--no-build` is the point: the editor must already be in the wheel.
+        # `cd /tmp` because from the repository root a missing wheel file would
+        # be found in the source tree and the whole test would prove nothing.
+        run: |
+          cd /tmp
+          # `$!` rather than `%1`: job control is off in a non-interactive
+          # shell, so `kill %1` would fail the step under `bash -e`.
+          plexus up --no-open --no-build --port 8900 > /tmp/up.log 2>&1 &
+          up=$!
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8900/api/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+
+          curl -fsS http://127.0.0.1:8900/api/health | grep -q '"protocol"'
+          curl -fsS http://127.0.0.1:8900/ > /tmp/page.html
+          grep -q "<title>Plexus</title>" /tmp/page.html
+
+          # An asset, not just the page: `web/assets/*` is a second package-data
+          # line and a wheel can carry index.html without it.
+          asset=$(grep -o "assets/[^\"]*\.js" /tmp/page.html | head -1)
+          test -n "$asset"
+          curl -fsS -o /dev/null "http://127.0.0.1:8900/$asset"
+
+          kill $up
+          cat /tmp/up.log
+
   # The parity invariant: the catalogue is authored in TypeScript and read by Python,
   # and a stale plexus/schema/catalogue.json means the two sides disagree about what a node is.
   catalogue:

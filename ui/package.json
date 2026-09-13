@@ -14,7 +14,8 @@
     "export:catalogue": "node scripts/export-catalogue.mjs",
     "typecheck": "tsc -b",
     "build:docs": "vite build --base=./ --outDir dist-docs",
-    "screenshots": "npm run build:docs && node scripts/screenshots.mjs"
+    "screenshots": "npm run build:docs && node scripts/screenshots.mjs",
+    "build:bundle": "vite build --outDir ../plexus/web --emptyOutDir --base=./"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

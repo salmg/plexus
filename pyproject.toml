@@ -51,7 +51,14 @@ include = ["plexus*"]
 # to another backend, fails loudly instead of shipping a `plexus` command that
 # cannot answer a single subcommand.
 [tool.setuptools.package-data]
-plexus = ["schema/*.json"]
+plexus = [
+  "schema/*.json",
+  # The built editor, when `npm run build:bundle` has been run before
+  # packaging. A wheel with it needs no Node on the far end; a wheel
+  # without it still installs, and `plexus up` says what to do.
+  "web/*",
+  "web/assets/*",
+]
 
 [tool.ruff]
 line-length = 90

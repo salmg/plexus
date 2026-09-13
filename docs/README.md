@@ -22,7 +22,7 @@ the dark one; both were measured against WCAG on every surface they use.
 
 | | |
 |---|---|
-| **[Install](install.md)** | Get it running. Fifteen minutes, no hardware needed. |
+| **[Install](install.md)** | `plexus up`, and what it did. No hardware needed. |
 | **[Your first rig](first-run.md)** | Build and run a relay end to end on a laptop. |
 | **[The node reference](nodes.md)** | What each of the fifteen nodes is, and what it needs. |
 | **[Running on hardware](hardware.md)** | The Python runtime, the rig, what is not built yet. |

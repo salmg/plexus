@@ -143,25 +143,19 @@ answer the same protocol.
 
 ```bash
 git clone --recurse-submodules https://github.com/salmg/plexus
-cd plexus/ui
-npm install
-npm run dev
+cd plexus
+pip install -e ".[runtime]"
+plexus up
 ```
 
-Open http://localhost:5173. It starts on a simulated runtime — no reader, no
-atrium, no Python — with an example rig loaded so there is something to read.
+That builds the editor the first time — a minute, and the only step that needs
+the network — then serves the editor and the runtime together on
+http://127.0.0.1:8900/ and opens a browser there. An example rig is loaded so
+there is something to read.
+
 The top bar always says which runtime is answering, so a simulated result is
-never mistaken for a card.
-
-To point it at the real runtime, start that too:
-
-```bash
-plexus serve                 # ws://127.0.0.1:8900/ws
-```
-
-then open `http://localhost:5173/?runtime=ws://127.0.0.1:8900/ws`. The top bar
-shows the runtime's address instead of "simulated", the Run button arms the
-graph for real, and the console reaches into it:
+never mistaken for a card. Here it shows the runtime's address, the Run button
+arms the graph for real, and the console reaches into it:
 
 ```
 plexus> tx 00B2010C00
@@ -169,9 +163,13 @@ plexus> tx 00B2010C00
 <- 70145A0854133300123456785F24032512315F3401019000
 ```
 
-`serve` binds loopback. Binding anywhere else refuses to start without
+It binds loopback. Binding anywhere else refuses to start without
 `PLEXUS_API_TOKEN` set — an open control plane for a card relay is not
 something to leave to a warning nobody reads.
+
+The editor also runs alone, on a simulated runtime with no Python and no
+atrium — `cd ui && npm run dev`, and `plexus serve` when you want a real
+runtime behind it. See [Install](docs/install.md).
 
 The graph model and the checks also run headless, with only PyYAML installed:
 
