@@ -95,6 +95,9 @@ It drives the card on its own — point it at a card you own.
 | Model | which back end answers |
 | Brute-force SFI range | sweep every short file identifier rather than only what the AFL points at |
 
+See [Trying the agent](hardware.md#trying-the-agent) for the key it needs and a
+rig to run it against with no reader.
+
 ---
 
 ## Transforms — nodes that sit in the conversation

@@ -105,6 +105,51 @@ A graph cannot widen it for you. That is the point.
 
 ---
 
+## Trying the agent
+
+The **EMV agent** is a terminal whose next command a language model writes,
+reading each answer before it decides the next — atrium's agent, narrowed to the
+one thing a terminal does: ask. It needs a model back end, not a reader, so it
+runs on the same laptop as everything else. The only new thing is a key.
+
+Set one of these — atrium follows whichever it finds and names the one to set if
+it finds none:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-…                 # Claude
+export OPENAI_API_KEY=sk-…                         # OpenAI
+export ATRIUM_LLM_BASE_URL=http://localhost:11434/v1 \
+  ATRIUM_LLM_MODEL=llama3.1                         # a local model (Ollama, vLLM, …)
+```
+
+Then run the rig that reads the same recorded card the probe does, but with the
+agent driving:
+
+```bash
+plexus run examples/agent-a-capture.plexus.yaml
+```
+
+The trace scrolls as it does for any terminal — except the commands are the
+model's, chosen from the last reply rather than a script — and it prints a short
+summary of what the card turned out to be when it calls it done. In the editor
+it is the same: drop an **EMV agent**, wire its card port to a capture (or any
+card node), give it a task, and press **Run**.
+
+Two things the node holds to, both by design:
+
+- **It stops.** A model that never calls finish is halted at a ceiling — a
+  bounded number of turns, and of commands — so a runaway costs tokens, not an
+  endless relay. Stop halts it between commands like any other run.
+- **It is pointed at a card, and drives it on its own.** That is the whole point
+  of the node, and the reason to point it only at a card you own or have written
+  permission to test — the same terms as everything else here.
+
+With no key set it refuses at bind and names the variable to set, exactly as a
+hardware node names the reader it wants. `plexus nodes` marks it with a dot until
+a model is configured.
+
+---
+
 ## What is not built
 
 **This is the honest part of this page.** The engine binds, drives, rewrites,

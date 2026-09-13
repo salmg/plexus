@@ -1,0 +1,34 @@
+# Plexus graph.
+#
+# The same recorded card the probe rig reads, but driven by the EMV agent: a
+# language model writes the commands and reads the answers instead of a fixed
+# sequence. No reader and no phone — the only thing it needs beyond the probe
+# rig is a model back end, so it runs on a laptop with one environment variable.
+#
+#   export ANTHROPIC_API_KEY=sk-ant-…      # or OPENAI_API_KEY, or ATRIUM_LLM_BASE_URL
+#   plexus run examples/agent-a-capture.plexus.yaml
+#
+# With no key set it refuses at bind and says which variable to set, the same
+# way a hardware node names the reader it wants.
+version: 1
+name: agent reads a recorded card
+
+nodes:
+  - id: agent-1
+    type: agent
+    at: [40, 160]
+    config:
+      task: Identify this card — its applications, and read the records each offers.
+      # provider left unset on purpose: atrium follows whichever key is set.
+
+  - id: capture-1
+    type: capture
+    at: [360, 160]
+    config:
+      path: tests/captures/mastercard-probe.jsonl
+      strict: false
+
+edges:
+  - id: agent-1:card->capture-1:terminal
+    from: agent-1:card
+    to: capture-1:terminal
