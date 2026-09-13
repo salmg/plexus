@@ -1,0 +1,7 @@
+version: 1
+name: no reader chosen
+nodes:
+  - {id: probe-1, type: probe, at: [0, 0], config: {depth: quick}}
+  - {id: pcsc-1, type: pcsc, at: [300, 0], config: {}}
+edges:
+  - {id: e1, from: probe-1:card, to: pcsc-1:terminal}

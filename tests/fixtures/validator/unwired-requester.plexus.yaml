@@ -1,0 +1,5 @@
+version: 1
+name: lone probe
+nodes:
+  - {id: probe-1, type: probe, at: [0, 0], config: {depth: quick}}
+edges: []

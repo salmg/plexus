@@ -1,0 +1,40 @@
+{
+  "empty": [
+    "empty"
+  ],
+  "good": [],
+  "no-chain-headless": [
+    "no-chain",
+    "unwired-responder"
+  ],
+  "no-chain-parked": [
+    "no-chain"
+  ],
+  "port-contended": [
+    "port-contended"
+  ],
+  "same-role": [
+    "same-role",
+    "two-chains"
+  ],
+  "self-edge": [
+    "cycle",
+    "self-edge"
+  ],
+  "two-chains": [
+    "two-chains"
+  ],
+  "unbound-device": [
+    "unbound-device"
+  ],
+  "unknown-port": [
+    "unknown-port",
+    "unwired-responder"
+  ],
+  "unwired-oob": [
+    "unwired-oob"
+  ],
+  "unwired-requester": [
+    "unwired-requester"
+  ]
+}

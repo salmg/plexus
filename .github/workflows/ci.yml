@@ -202,7 +202,7 @@ jobs:
           fi
 
   editor:
-    name: editor typecheck, lint and build
+    name: editor typecheck, lint, test and build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -220,6 +220,15 @@ jobs:
         working-directory: ui
 
       - run: npx oxlint src
+        working-directory: ui
+
+      # The editor half had no test of its own behaviour until now: `tsc` and
+      # `oxlint` prove it compiles, not that it decides anything correctly.
+      # `tests/parity.test.ts` is the one that matters most — it runs the same
+      # fixture graphs through this validator that `tests/test_parity.py` runs
+      # through the Python one, against one shared contract file. A rule added
+      # to one language and forgotten in the other fails here.
+      - run: npm test
         working-directory: ui
 
       - run: npx vite build

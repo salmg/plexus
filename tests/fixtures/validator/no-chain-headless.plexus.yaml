@@ -1,0 +1,7 @@
+version: 1
+name: headless
+nodes:
+  - {id: bp-1, type: breakpoint, at: [0, 0], config: {}}
+  - {id: cap-1, type: capture, at: [300, 0], config: {path: tests/captures/mastercard-probe.jsonl}}
+edges:
+  - {id: e1, from: bp-1:card, to: cap-1:terminal}

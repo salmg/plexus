@@ -1,0 +1,9 @@
+version: 1
+name: injection with no line
+nodes:
+  - {id: probe-1, type: probe, at: [0, 0], config: {depth: quick}}
+  - {id: inj-1, type: inject, at: [300, 0], config: {triggerIns: "AE", apdu: "80CA9F1700", when: before_command}}
+  - {id: cap-1, type: capture, at: [600, 0], config: {path: tests/captures/mastercard-probe.jsonl}}
+edges:
+  - {id: e1, from: probe-1:card, to: inj-1:terminal}
+  - {id: e2, from: inj-1:card, to: cap-1:terminal}

@@ -1,0 +1,9 @@
+version: 1
+name: one port twice
+nodes:
+  - {id: probe-1, type: probe, at: [0, 0], config: {depth: quick}}
+  - {id: cap-1, type: capture, at: [300, 0], config: {path: tests/captures/mastercard-probe.jsonl}}
+  - {id: cap-2, type: capture, at: [300, 200], config: {path: tests/captures/mastercard-probe.jsonl}}
+edges:
+  - {id: e1, from: probe-1:card, to: cap-1:terminal}
+  - {id: e2, from: probe-1:card, to: cap-2:terminal}

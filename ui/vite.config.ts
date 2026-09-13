@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -16,5 +16,16 @@ export default defineConfig({
       // `Error: EBUSY: resource busy or locked, watch '…/Network/Cookies'`.
       ignored: ["**/scripts/.chrome-screenshots/**", "**/dist-docs/**"],
     },
+  },
+  test: {
+    // Only this project's tests. Without the include, vitest walked into
+    // `scripts/.chrome-screenshots` — the throwaway Chrome profile above — and
+    // tried to run the `.spec.js` files bundled inside a browser extension in
+    // it: 28 failing files from someone else's code, around 13 real passes.
+    include: ["tests/**/*.test.ts"],
+    // Node, not jsdom: everything tested here is the graph model, the
+    // validator and the store, none of which touch a DOM. The parity test also
+    // reads fixture files off disk, which needs node's `fs`.
+    environment: "node",
   },
 });

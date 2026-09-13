@@ -1,0 +1,7 @@
+version: 1
+name: both ask
+nodes:
+  - {id: probe-1, type: probe, at: [0, 0], config: {depth: quick}}
+  - {id: probe-2, type: probe, at: [300, 0], config: {depth: quick}}
+edges:
+  - {id: e1, from: probe-1:card, to: probe-2:card}

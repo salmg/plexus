@@ -49,6 +49,22 @@ def test_the_test_fixtures_are_tracked(tracked_paths):
     assert "tests/captures/mastercard-probe.jsonl" in tracked_paths
 
 
+def test_the_validator_fixtures_and_their_contract_are_tracked(tracked_paths):
+    """
+    The graphs both validators are judged against, and the file they are judged
+    by. `ui/tests/parity.test.ts` reads these across the repository boundary, so
+    an untracked one fails the *editor's* suite on a fresh clone — a long way
+    from where the missing file actually is.
+    """
+    fixtures = sorted(
+        p.relative_to(REPO).as_posix()
+        for p in (REPO / "tests" / "fixtures" / "validator").glob("*.plexus.yaml")
+    )
+    assert fixtures, "no validator fixtures found at all"
+    for path in fixtures + ["tests/fixtures/validator/expected.json"]:
+        assert path in tracked_paths, f"{path} exists here but is not in the repo"
+
+
 def test_every_example_rig_is_tracked(tracked_paths):
     for rig in sorted((REPO / "examples").glob("*.yaml")):
         relative = rig.relative_to(REPO).as_posix()
