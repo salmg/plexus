@@ -210,6 +210,24 @@ export function validate(
   problemsFromTiming(graph, active, problems);
   problemsFromSupport(active, unavailable, problems);
 
+  // Is there a chain at all? Last, and only when nothing above already explains
+  // why not — "the probe has nothing on its card port" is worth more than "no
+  // complete chain", and saying both says the second one twice.
+  //
+  // The engine has always refused a graph with no chain at `arm`, under exactly
+  // this condition. It was the one rule it kept to itself, so a graph with
+  // nothing at its head — or whose only target is parked — passed every check,
+  // left Run enabled, and faulted a moment later. Measured: a probe wired to a
+  // disabled capture produced *no problems at all* and still would not run.
+  // `_chain_problems` in `plexus/graph.py` is the same rule, same sentence.
+  if (!hasBlockingProblem(problems) && chainOf(graph).length < 2) {
+    problems.push({
+      code: "no-chain",
+      level: "error",
+      message: t("check.noChain"),
+    });
+  }
+
   return problems;
 }
 
@@ -392,6 +410,44 @@ function findCycle(graph: PlexusGraph, alive: Set<string>): string[] {
  *
  * `plexus/graph.py` carries the same check.
  */
+/**
+ * The nodes a command crosses, in order — the one walk this project has.
+ *
+ * Mirrors `chain()` in `plexus/graph.py` exactly: start at a node that only
+ * asks, follow the edge leaving each one, skip out-of-band edges because they
+ * are a side channel rather than a step, and stop at a disabled node because
+ * disabling is how you park part of a rig.
+ *
+ * Exported because the simulator walks the same chain, and two walks that are
+ * meant to agree and are written twice are two walks that will not.
+ */
+export function chainOf(graph: PlexusGraph): PlexusNode[] {
+  const active = graph.nodes.filter((n) => !n.disabled);
+
+  const roots = active.filter((n) => {
+    const type = nodeType(n.type);
+    if (!type) return false;
+    const asks = type.ports.some((p) => p.role === "requester" && !p.oob);
+    const answers = type.ports.some((p) => p.role === "responder");
+    return asks && !answers;
+  });
+
+  const out: PlexusNode[] = [];
+  const seen = new Set<string>();
+  let current: PlexusNode | undefined = roots[0];
+
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    out.push(current);
+    const edge = graph.edges.find(
+      (e) => e.from.node === current!.id && e.from.port !== "oob",
+    );
+    current = edge ? active.find((n) => n.id === edge.to.node) : undefined;
+  }
+
+  return out;
+}
+
 function problemsFromChains(active: PlexusNode[], out: Problem[]): void {
   const roots = active.filter((n) => {
     const type = nodeType(n.type);

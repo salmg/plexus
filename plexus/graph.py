@@ -263,6 +263,26 @@ def validate(graph: Graph, devices: Iterable[Device] = ()) -> list[Problem]:
     problems += _host_problems(graph)
     problems += _timing_problems(graph)
 
+    # Is there a chain at all? Last, and only when nothing above already
+    # explains why not — "the probe has nothing on its card port" is worth more
+    # than "no complete chain", and saying both says the second one twice.
+    #
+    # The engine has always refused a graph with no chain at `arm`, with exactly
+    # this sentence and exactly this "only if nothing else blocked" condition.
+    # It was the one rule it kept to itself, so a graph with nothing at its head
+    # — or whose only target is parked — passed `plexus check` with "0 blocking",
+    # left Run enabled in the editor, and faulted a moment later. Measured: a
+    # probe wired to a disabled capture reported *no problems at all*.
+    if not any(p.blocking for p in problems) and len(chain(graph)) < 2:
+        problems.append(
+            Problem(
+                "no-chain",
+                "error",
+                "No complete chain: a graph needs something that asks and "
+                "something that answers.",
+            )
+        )
+
     problems.sort(key=lambda p: 0 if p.level == "error" else 1)
     return problems
 

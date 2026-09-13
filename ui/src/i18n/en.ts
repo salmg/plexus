@@ -174,6 +174,8 @@ export const en = {
     "These nodes form a loop: {nodes}. A conversation has to end somewhere.",
   "check.unwiredRequester":
     "{node} has nothing on its {port} port. Wire it to something that answers.",
+  "check.noChain":
+    "No complete chain: a graph needs something that asks and something that answers.",
   "check.twoChains":
     "This graph has {count} separate chains: {nodes}. Plexus runs one at a time, and would run the one starting at {running}.",
   "check.nodeUnavailable":

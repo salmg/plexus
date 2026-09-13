@@ -898,3 +898,121 @@ def test_a_disabled_second_chain_is_not_a_second_chain():
         """
     )
     assert not [p for p in validate(graph) if p.code == "two-chains"]
+
+
+# ── A graph with no chain at all ──────────────────────────────────────────────
+#
+# The engine refused these at `arm` and the validator had no opinion, so they
+# passed `plexus check` with "0 blocking", left Run enabled in the editor, and
+# faulted a moment later. The worst of them reported *nothing whatsoever*.
+
+
+def test_a_chain_with_nothing_asking_is_refused():
+    """A transform and a card, and nobody to start the conversation."""
+    graph = build(
+        """
+        version: 1
+        name: headless
+        nodes:
+          - id: bp
+            type: breakpoint
+            at: [0, 0]
+            config: {}
+          - id: cap
+            type: capture
+            at: [300, 0]
+            config: {path: tests/captures/mastercard-probe.jsonl}
+        edges:
+          - from: bp:card
+            to: cap:terminal
+        """
+    )
+    blocking = [p for p in validate(graph) if p.blocking]
+    assert [p.code for p in blocking] == ["no-chain"]
+
+
+def test_a_chain_whose_only_target_is_parked_is_refused():
+    """
+    The one that reported nothing at all.
+
+    The probe's card port *is* wired, so no port check fires; the edge is legal,
+    so no edge check fires; and the walk stops at the disabled node, so there is
+    no chain. Zero problems, Run enabled, and `arm` refused it.
+    """
+    graph = build(
+        """
+        version: 1
+        name: parked target
+        nodes:
+          - id: probe-1
+            type: probe
+            at: [0, 0]
+            config: {depth: quick}
+          - id: cap
+            type: capture
+            disabled: true
+            at: [300, 0]
+            config: {path: tests/captures/mastercard-probe.jsonl}
+        edges:
+          - from: probe-1:card
+            to: cap:terminal
+        """
+    )
+    blocking = [p for p in validate(graph) if p.blocking]
+    assert [p.code for p in blocking] == ["no-chain"]
+
+
+def test_the_specific_reason_beats_the_general_one():
+    """
+    A lone probe has no chain *and* an unwired card port. The port is the one
+    worth saying: it names the thing to fix. `no-chain` is the fallback for when
+    nothing more specific already explains it, which is how the engine has
+    always phrased the same rule.
+    """
+    graph = build(
+        """
+        version: 1
+        name: lone probe
+        nodes:
+          - id: probe-1
+            type: probe
+            at: [0, 0]
+            config: {depth: quick}
+        edges: []
+        """
+    )
+    codes = [p.code for p in validate(graph) if p.blocking]
+    assert "unwired-requester" in codes
+    assert "no-chain" not in codes
+
+
+def test_a_complete_rig_has_no_chain_complaint():
+    """The check must not fire on the thing it is meant to let through."""
+    graph = build(
+        """
+        version: 1
+        name: fine
+        nodes:
+          - id: probe-1
+            type: probe
+            at: [0, 0]
+            config: {depth: quick}
+          - id: cap
+            type: capture
+            at: [300, 0]
+            config: {path: tests/captures/mastercard-probe.jsonl}
+        edges:
+          - from: probe-1:card
+            to: cap:terminal
+        """
+    )
+    assert validate(graph) == []
+
+
+def test_an_empty_canvas_is_not_an_error():
+    """
+    Starting a new file is not a mistake. It stays a warning, so a blank canvas
+    does not open with a red mark on it.
+    """
+    graph = build("version: 1\nname: empty\nnodes: []\nedges: []\n")
+    assert [p.level for p in validate(graph)] == ["warning"]

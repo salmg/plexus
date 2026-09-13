@@ -19,6 +19,7 @@
  */
 
 import { nodeType } from "../catalogue";
+import { chainOf } from "../graph/validate";
 import type { Device, PlexusGraph, PlexusNode } from "../graph/types";
 import type { ConsoleResult, Runtime, RuntimeHandlers } from "./transport";
 import { now, parseHex } from "./transport";
@@ -429,40 +430,22 @@ function mutateGpo(command: string): string | null {
 }
 
 /**
- * Walk the graph from every node that only asks, following the edge that
- * leaves each one, until something answers and asks nothing further.
+ * The chain as hops: the node, the edge leaving it, and what it costs.
  *
- * Out-of-band edges are skipped: they are a side channel to the card, not a
- * step in the conversation, and counting them would double the latency of a
- * chain that has an injection node in it.
+ * The walk itself is `chainOf` in `graph/validate.ts` — the same one the checks
+ * and `plexus/graph.py` use. It used to be written out again here, which is how
+ * the simulator and the validator came to disagree about whether a graph had a
+ * chain at all: the validator had no opinion, and this ran the graph anyway.
  */
 export function buildChain(graph: PlexusGraph): Hop[] {
-  const active = graph.nodes.filter((n) => !n.disabled);
-
-  const roots = active.filter((n) => {
-    const type = nodeType(n.type);
-    if (!type) return false;
-    const hasResponder = type.ports.some((p) => p.role === "responder");
-    const hasRequester = type.ports.some((p) => p.role === "requester" && !p.oob);
-    return hasRequester && !hasResponder;
-  });
-
-  const hops: Hop[] = [];
-  const seen = new Set<string>();
-  let current: PlexusNode | undefined = roots[0];
-
-  while (current && !seen.has(current.id)) {
-    seen.add(current.id);
+  return chainOf(graph).map((node) => {
     const edge = graph.edges.find(
-      (e) => e.from.node === current!.id && e.from.port !== "oob",
+      (e) => e.from.node === node.id && e.from.port !== "oob",
     );
-    hops.push({
-      node: current,
+    return {
+      node,
       edgeId: edge?.id ?? null,
-      latency: nodeType(current.type)?.latencyMs ?? 0,
-    });
-    current = edge ? active.find((n) => n.id === edge.to.node) : undefined;
-  }
-
-  return hops;
+      latency: nodeType(node.type)?.latencyMs ?? 0,
+    };
+  });
 }

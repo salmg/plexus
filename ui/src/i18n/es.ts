@@ -197,6 +197,8 @@ const esChrome: Record<MessageKey, string> = {
     "Estos nodos forman un bucle: {nodes}. Una conversación tiene que acabar en algún sitio.",
   "check.unwiredRequester":
     "{node} no tiene nada en su puerto {port}. Conéctalo a algo que responda.",
+  "check.noChain":
+    "No hay una cadena completa: un grafo necesita algo que pida y algo que responda.",
   "check.twoChains":
     "Este grafo tiene {count} cadenas separadas: {nodes}. Plexus ejecuta una cada vez, y ejecutaría la que empieza en {running}.",
   "check.nodeUnavailable":
