@@ -24,12 +24,16 @@ import {
 } from "@xyflow/react";
 import type { Connection, Edge, Node, NodeChange } from "@xyflow/react";
 
-import { nodeType } from "../catalogue";
+import { CLASS_ORDER, NODE_TYPES, nodeType } from "../catalogue";
 import { useT, useTn } from "../i18n";
+import { classLabel, nodeTitle } from "../i18n/catalogue";
 import { canConnect } from "../graph/validate";
 import type { Problem } from "../graph/validate";
 import { useGraph } from "../store/useGraph";
+import { useLayout } from "../store/useLayout";
 import { useRuntime } from "../store/useRuntime";
+import { ContextMenu } from "./ContextMenu";
+import type { MenuItem, MenuState } from "./ContextMenu";
 import { NODE_HEIGHT, NODE_WIDTH, PlexusNodeView } from "./PlexusNode";
 import type { PlexusNodeData } from "./PlexusNode";
 
@@ -72,6 +76,12 @@ export function Canvas({ problems }: CanvasProps) {
   const removeNodes = useGraph((s) => s.removeNodes);
   const connect = useGraph((s) => s.connect);
   const disconnect = useGraph((s) => s.disconnect);
+  const duplicate = useGraph((s) => s.duplicate);
+  const copy = useGraph((s) => s.copy);
+  const paste = useGraph((s) => s.paste);
+  const toggleDisabled = useGraph((s) => s.toggleDisabled);
+  const selectAll = useGraph((s) => s.selectAll);
+  const clipboard = useGraph((s) => s.clipboard);
   const edgeTelemetry = useRuntime((s) => s.edges);
   const running = useRuntime((s) => s.state === "running");
 
@@ -302,6 +312,124 @@ export function Canvas({ problems }: CanvasProps) {
     event.dataTransfer.dropEffect = "copy";
   }, []);
 
+  // ── The right-click menu ──────────────────────────────────────────────────
+  //
+  // Opened from React Flow's own context-menu callbacks, which fire on a
+  // right-click and on a touch long-press alike. The canvas decides what each
+  // menu says; `ContextMenu` only lays it out.
+
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  /** Bring the inspector into view for a node, wherever it is laid out. */
+  const configure = useCallback(
+    (id: string) => {
+      select(id);
+      if (!useLayout.getState().inspector) useLayout.getState().toggle("inspector");
+    },
+    [select],
+  );
+
+  /** The palette, as a nested "Add node" submenu that drops at the cursor. */
+  const addNodeSubmenu = useCallback(
+    (at: { x: number; y: number }): MenuItem[] =>
+      CLASS_ORDER.flatMap((cls) => {
+        const items = NODE_TYPES.filter((ty) => ty.nodeClass === cls);
+        if (items.length === 0) return [];
+        return [
+          { key: `h-${cls}`, label: classLabel(cls), disabled: true },
+          ...items.map((ty) => ({
+            key: ty.key,
+            label: nodeTitle(ty),
+            onSelect: () =>
+              addNode(ty.key, { x: Math.round(at.x - 90), y: Math.round(at.y - 40) }),
+          })),
+        ];
+      }),
+    [addNode],
+  );
+
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: Node<PlexusNodeData>) => {
+      event.preventDefault();
+      const id = (node.data as PlexusNodeData).nodeId;
+      // Act on the whole selection when the node is part of it; otherwise on
+      // just this node, and make it the selection so the menu's target is what
+      // the person sees highlighted.
+      const ids = selection.includes(id) ? selection : [id];
+      if (!selection.includes(id)) select(id);
+
+      const model = graph.nodes.find((n) => n.id === id);
+      const many = ids.length > 1;
+
+      const items: MenuItem[] = many
+        ? [
+            { key: "dup", label: t("menu.duplicateN", { n: ids.length }), onSelect: () => duplicate(ids) },
+            { key: "copy", label: t("menu.copyN", { n: ids.length }), onSelect: () => copy(ids) },
+            { key: "s1", separator: true, label: "" },
+            { key: "del", label: t("menu.deleteN", { n: ids.length }), danger: true, onSelect: () => removeNodes(ids) },
+          ]
+        : [
+            { key: "config", label: t("menu.configure"), onSelect: () => configure(id) },
+            { key: "dup", label: t("menu.duplicate"), onSelect: () => duplicate(ids) },
+            { key: "copy", label: t("menu.copy"), onSelect: () => copy(ids) },
+            { key: "s1", separator: true, label: "" },
+            {
+              key: "disable",
+              label: model?.disabled ? t("menu.enable") : t("menu.disable"),
+              onSelect: () => toggleDisabled(id),
+            },
+            { key: "s2", separator: true, label: "" },
+            { key: "del", label: t("menu.delete"), danger: true, onSelect: () => removeNodes(ids) },
+          ];
+
+      setMenu({ x: event.clientX, y: event.clientY, items });
+    },
+    [selection, select, graph.nodes, t, duplicate, copy, removeNodes, configure, toggleDisabled],
+  );
+
+  const onSelectionContextMenu = useCallback(
+    (event: React.MouseEvent, nodes: Node<PlexusNodeData>[]) => {
+      event.preventDefault();
+      const ids = nodes.map((n) => (n.data as PlexusNodeData).nodeId);
+      setMenu({
+        x: event.clientX,
+        y: event.clientY,
+        items: [
+          { key: "dup", label: t("menu.duplicateN", { n: ids.length }), onSelect: () => duplicate(ids) },
+          { key: "copy", label: t("menu.copyN", { n: ids.length }), onSelect: () => copy(ids) },
+          { key: "s1", separator: true, label: "" },
+          { key: "del", label: t("menu.deleteN", { n: ids.length }), danger: true, onSelect: () => removeNodes(ids) },
+        ],
+      });
+    },
+    [t, duplicate, copy, removeNodes],
+  );
+
+  const onPaneContextMenu = useCallback(
+    (event: MouseEvent | React.MouseEvent) => {
+      event.preventDefault();
+      const at = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      setMenu({
+        x: event.clientX,
+        y: event.clientY,
+        items: [
+          {
+            key: "paste",
+            label: t("menu.paste"),
+            disabled: !clipboard,
+            onSelect: () => paste(at),
+          },
+          { key: "add", label: t("menu.addNode"), submenu: addNodeSubmenu(at) },
+          { key: "s1", separator: true, label: "" },
+          { key: "all", label: t("menu.selectAll"), disabled: graph.nodes.length === 0, onSelect: selectAll },
+          { key: "fit", label: t("menu.fitView"), disabled: graph.nodes.length === 0, onSelect: () => void fitView({ duration: 200 }) },
+        ],
+      });
+    },
+    [screenToFlowPosition, t, clipboard, paste, addNodeSubmenu, graph.nodes.length, selectAll, fitView],
+  );
+
   return (
     <div className="canvas" ref={wrapper} onDrop={onDrop} onDragOver={onDragOver}>
       <ReactFlow
@@ -319,6 +447,9 @@ export function Canvas({ problems }: CanvasProps) {
           }
         }}
         onPaneClick={() => select(null)}
+        onNodeContextMenu={onNodeContextMenu}
+        onSelectionContextMenu={onSelectionContextMenu}
+        onPaneContextMenu={onPaneContextMenu}
         proOptions={{ hideAttribution: false }}
         defaultEdgeOptions={{ type: "default" }}
         minZoom={0.25}
@@ -419,6 +550,8 @@ export function Canvas({ problems }: CanvasProps) {
           {refusal}
         </div>
       )}
+
+      {menu && <ContextMenu state={menu} onClose={closeMenu} />}
     </div>
   );
 }

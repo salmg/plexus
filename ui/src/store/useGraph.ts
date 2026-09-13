@@ -12,12 +12,80 @@ import { emptyGraph } from "../graph/types";
 import { remembered, THEME_KEY } from "./remember";
 import type {
   Device,
+  NodePosition,
+  PlexusEdge,
   PlexusGraph,
   PlexusNode,
   PortRef,
 } from "../graph/types";
 
 const HISTORY_LIMIT = 60;
+
+/** How far a duplicate or a paste-with-no-target lands from its original. */
+const CLONE_OFFSET = 28;
+
+/**
+ * A copied slice of the graph: the nodes, and only the edges *between* them.
+ *
+ * An edge with one end outside the selection is not part of what was copied —
+ * pasting it would attach a wire to a node that is not there. So copy keeps the
+ * internal wiring and drops the rest, the mirror of what `removeNodes` does.
+ */
+export interface Clipboard {
+  nodes: PlexusNode[];
+  edges: PlexusEdge[];
+}
+
+/** Edges with both ends inside the id set — the wiring that travels with a copy. */
+function internalEdges(graph: PlexusGraph, ids: Set<string>): PlexusEdge[] {
+  return graph.edges.filter((e) => ids.has(e.from.node) && ids.has(e.to.node));
+}
+
+/**
+ * Graft a slice of graph onto `g` with fresh ids, offset by `shift`.
+ *
+ * Ids are reserved as they are minted, against the live graph *and* against the
+ * clones already made this call, so duplicating three mutation nodes gives
+ * `mutation-2/3/4` rather than three collisions. Internal edges are rewired to
+ * the new ids; the config is deep-copied so the clone and the original do not
+ * share a mutable object.
+ */
+function graft(
+  g: PlexusGraph,
+  slice: Clipboard,
+  shift: NodePosition,
+): { graph: PlexusGraph; ids: string[] } {
+  const taken = new Set(g.nodes.map((n) => n.id));
+  const idMap = new Map<string, string>();
+
+  const nodes = slice.nodes.map((n) => {
+    const stem = n.type.replace(/[._]/g, "-");
+    let k = 1;
+    while (taken.has(`${stem}-${k}`)) k += 1;
+    const id = `${stem}-${k}`;
+    taken.add(id);
+    idMap.set(n.id, id);
+    return {
+      ...n,
+      id,
+      position: { x: n.position.x + shift.x, y: n.position.y + shift.y },
+      config: structuredClone(n.config),
+    };
+  });
+
+  const edges = slice.edges
+    .filter((e) => idMap.has(e.from.node) && idMap.has(e.to.node))
+    .map((e) => {
+      const from = { node: idMap.get(e.from.node)!, port: e.from.port };
+      const to = { node: idMap.get(e.to.node)!, port: e.to.port };
+      return { id: `${from.node}:${from.port}->${to.node}:${to.port}`, from, to };
+    });
+
+  return {
+    graph: { ...g, nodes: [...g.nodes, ...nodes], edges: [...g.edges, ...edges] },
+    ids: nodes.map((n) => n.id),
+  };
+}
 
 export type Theme = "dark" | "light";
 
@@ -58,6 +126,15 @@ interface GraphState {
   removeNodes: (ids: string[]) => void;
   nudge: (ids: string[], dx: number, dy: number) => void;
 
+  /** The last copy, kept out of undo history — it is not an edit to the graph. */
+  clipboard: Clipboard | null;
+  /** Clone nodes (and the wiring between them) in place; select the clones. */
+  duplicate: (ids: string[]) => string[];
+  /** Put a copy of these nodes on the clipboard. Leaves the graph untouched. */
+  copy: (ids: string[]) => void;
+  /** Drop the clipboard onto the graph — at `at` if given, else offset. */
+  paste: (at?: NodePosition) => string[];
+
   connect: (from: PortRef, to: PortRef) => void;
   disconnect: (edgeId: string) => void;
 
@@ -87,6 +164,7 @@ export const useGraph = create<GraphState>((set, get) => {
     graph: emptyGraph(),
     selection: [],
     dragFrom: null,
+    clipboard: null,
     devices: [],
     // Read here rather than restored by an effect: an effect raced the one
     // that persists it, and the default overwrote the saved value often
@@ -236,6 +314,66 @@ export const useGraph = create<GraphState>((set, get) => {
             : n,
         ),
       }));
+    },
+
+    duplicate: (ids) => {
+      if (ids.length === 0) return [];
+      const want = new Set(ids);
+      const g = get().graph;
+      const slice: Clipboard = {
+        // Graph order, not click order, so a duplicated chain keeps its shape.
+        nodes: g.nodes.filter((n) => want.has(n.id)),
+        edges: internalEdges(g, want),
+      };
+      if (slice.nodes.length === 0) return [];
+
+      let ids2: string[] = [];
+      edit((cur) => {
+        const { graph, ids: made } = graft(cur, slice, {
+          x: CLONE_OFFSET,
+          y: CLONE_OFFSET,
+        });
+        ids2 = made;
+        return graph;
+      });
+      set({ selection: ids2 });
+      return ids2;
+    },
+
+    copy: (ids) => {
+      const want = new Set(ids);
+      const g = get().graph;
+      const nodes = g.nodes.filter((n) => want.has(n.id));
+      if (nodes.length === 0) return;
+      // Snapshotted now, so a later edit to these nodes does not change what a
+      // paste produces. Deep-copied for the same reason.
+      set({
+        clipboard: structuredClone({ nodes, edges: internalEdges(g, want) }),
+      });
+    },
+
+    paste: (at) => {
+      const slice = get().clipboard;
+      if (!slice || slice.nodes.length === 0) return [];
+
+      // Anchor the group's top-left to the drop point when there is one, so a
+      // paste from the pane menu lands under the cursor rather than on top of
+      // the original. With no point, offset like a duplicate.
+      let shift = { x: CLONE_OFFSET, y: CLONE_OFFSET };
+      if (at) {
+        const minX = Math.min(...slice.nodes.map((n) => n.position.x));
+        const minY = Math.min(...slice.nodes.map((n) => n.position.y));
+        shift = { x: at.x - minX, y: at.y - minY };
+      }
+
+      let ids2: string[] = [];
+      edit((cur) => {
+        const { graph, ids: made } = graft(cur, slice, shift);
+        ids2 = made;
+        return graph;
+      });
+      set({ selection: ids2 });
+      return ids2;
     },
 
     connect: (from, to) =>
