@@ -616,6 +616,153 @@
           "help": "Fail on a command the capture does not contain, rather than improvising a response."
         }
       ]
+    },
+    {
+      "key": "iso8583.replay",
+      "icon": "file",
+      "title": "Corpus replay",
+      "nodeClass": "host",
+      "summary": "Plays the acquirer from a captured conversation, with nothing in front of it.",
+      "ports": [
+        {
+          "id": "host",
+          "channel": "iso8583",
+          "role": "requester",
+          "label": "host"
+        }
+      ],
+      "device": "file",
+      "latencyMs": 0,
+      "fields": [
+        {
+          "kind": "text",
+          "key": "corpus",
+          "label": "Corpus file",
+          "placeholder": "captures/auth-2026-09-11.jsonl",
+          "reaches": "file"
+        },
+        {
+          "kind": "select",
+          "key": "mode",
+          "label": "Mode",
+          "default": "verbatim",
+          "options": [
+            {
+              "value": "verbatim",
+              "label": "Verbatim — resend exactly what was captured"
+            },
+            {
+              "value": "freshen",
+              "label": "Freshen — new STAN, RRN and timestamps"
+            }
+          ]
+        }
+      ],
+      "caveats": [
+        "Verbatim resends a STAN and RRN the host has already seen. A host that approves a byte-identical replay has no duplicate detection at all, which is the question it asks.",
+        "Freshen rewrites only the volatile routing fields and leaves DE55 and its cryptogram exactly as captured — so it asks whether the ARQC is really bound to them."
+      ]
+    },
+    {
+      "key": "iso8583.host",
+      "icon": "link",
+      "title": "Payment host",
+      "nodeClass": "host",
+      "summary": "An acquirer, gateway or issuer reached over TCP with MLI framing.",
+      "ports": [
+        {
+          "id": "acquirer",
+          "channel": "iso8583",
+          "role": "responder",
+          "label": "acquirer"
+        }
+      ],
+      "latencyMs": 40,
+      "fields": [
+        {
+          "kind": "text",
+          "key": "host",
+          "label": "Host",
+          "placeholder": "switch.test.local"
+        },
+        {
+          "kind": "number",
+          "key": "port",
+          "label": "Port",
+          "default": 8583,
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "kind": "select",
+          "key": "dialect",
+          "label": "Dialect",
+          "default": "iso8583-1987",
+          "options": [
+            {
+              "value": "iso8583-1987",
+              "label": "ISO 8583:1987"
+            },
+            {
+              "value": "base24",
+              "label": "BASE24"
+            },
+            {
+              "value": "postilion",
+              "label": "Postilion"
+            }
+          ]
+        },
+        {
+          "kind": "bool",
+          "key": "tls",
+          "label": "TLS",
+          "default": false
+        }
+      ],
+      "caveats": [
+        "A dialect is a guess about somebody else's system. Getting the framing wrong degrades to \"could not read that\" rather than to a corrupted link."
+      ]
+    },
+    {
+      "key": "iso8583.mutation",
+      "icon": "swap",
+      "title": "Host mutation",
+      "nodeClass": "host",
+      "summary": "Rewrites data elements and DE55 tags as an authorisation passes.",
+      "ports": [
+        {
+          "id": "acquirer",
+          "channel": "iso8583",
+          "role": "responder",
+          "label": "acquirer"
+        },
+        {
+          "id": "host",
+          "channel": "iso8583",
+          "role": "requester",
+          "label": "host"
+        }
+      ],
+      "latencyMs": 1,
+      "fields": [
+        {
+          "kind": "yaml",
+          "key": "playbook",
+          "label": "Playbook",
+          "default": "# Host mutation rules, in atrium's host playbook format.\n# Playbooks from atrium/host/playbooks/ paste in here unchanged.\nname: amount-mismatch\ndescription: Raise DE4 while leaving the cryptogram's own amount untouched.\nenabled: true\n\nfield_mutations:\n  - de: 4\n    mode: replace\n    value: \"000000009999\"\n    direction: acquirer->issuer\n    on_mti: [\"0100\", \"0200\"]\n    comment: \"DE4 -> 99.99; tag 9F02 still carries the signed amount\"\n\nde55_mutations: []\n",
+          "rows": 18
+        },
+        {
+          "kind": "bool",
+          "key": "logMutations",
+          "label": "Log every rewrite",
+          "default": true
+        }
+      ],
+      "caveats": [
+        "A rewritten message is re-encoded from its decoded form, so the byte-exactness a passive relay guarantees is given up for the messages a rule actually changed. One that did not decode cleanly is never mutated, and a failed re-encode forwards the original."
+      ]
     }
   ]
 }

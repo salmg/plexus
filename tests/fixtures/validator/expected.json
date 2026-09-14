@@ -3,6 +3,7 @@
     "empty"
   ],
   "good": [],
+  "host-chain": [],
   "no-chain-headless": [
     "no-chain",
     "unwired-responder"
@@ -36,5 +37,8 @@
   ],
   "unwired-requester": [
     "unwired-requester"
+  ],
+  "wrong-channel": [
+    "wrong-channel"
   ]
 }

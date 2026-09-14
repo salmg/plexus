@@ -8,7 +8,14 @@
  */
 
 import type { NodeType } from "./types.ts";
-import { CARD_PORT, PASSTHROUGH_PORTS, TERMINAL_PORT } from "./types.ts";
+import {
+  ACQUIRER_PORT,
+  CARD_PORT,
+  HOST_PASSTHROUGH_PORTS,
+  HOST_PORT,
+  PASSTHROUGH_PORTS,
+  TERMINAL_PORT,
+} from "./types.ts";
 
 const DEFAULT_PLAYBOOK = `# Mutation rules, in atrium's playbook format.
 # Existing playbooks from atrium/playbooks/ paste in here unchanged.
@@ -24,6 +31,29 @@ pdol_mutations:
 response_mutations: []
 afl_mutations: []
 dol_mutations: []
+`;
+
+// The canonical host-layer experiment, and atrium's own
+// `host/playbooks/amount-mismatch.yaml` almost unchanged. It is the clearest
+// demonstration of why this layer exists: the amount appears twice in an
+// authorisation — as DE4, which the switch routes and authorises on, and as tag
+// 9F02 inside DE55, which the cryptogram was computed over. Raising one and not
+// the other asks which copy the far side actually believes.
+const DEFAULT_HOST_PLAYBOOK = `# Host mutation rules, in atrium's host playbook format.
+# Playbooks from atrium/host/playbooks/ paste in here unchanged.
+name: amount-mismatch
+description: Raise DE4 while leaving the cryptogram's own amount untouched.
+enabled: true
+
+field_mutations:
+  - de: 4
+    mode: replace
+    value: "000000009999"
+    direction: acquirer->issuer
+    on_mti: ["0100", "0200"]
+    comment: "DE4 -> 99.99; tag 9F02 still carries the signed amount"
+
+de55_mutations: []
 `;
 
 /* ── Terminal side — nodes that ask ────────────────────────────────────── */
@@ -401,7 +431,111 @@ const TRANSFORMS: NodeType[] = [
   },
 ];
 
-export const NODE_TYPES: NodeType[] = [...TERMINALS, ...TRANSFORMS, ...CARDS];
+/* ── Host layer — the conversation above the card ──────────────────────── */
+//
+// Where ATRIUM works card ⇄ terminal, atrium's `host/` package works the
+// message layer above it: acquirer ⇄ gateway ⇄ issuer, speaking ISO 8583.
+// These sit on the `iso8583` channel, so they wire to each other and never to
+// the apdu nodes — the two layers meet at DE55, not at a wire.
+//
+// None of them binds yet. The engine drives one shape of conversation, the
+// card's `transmit(command) -> response`; a host link is `send` and `receive`
+// over a framed socket, which is a second driving model rather than another
+// adapter. They draw, check, save and share meanwhile, which is the point of
+// the file being the document.
+
+const HOSTS: NodeType[] = [
+  {
+    key: "iso8583.replay",
+    icon: "file",
+    title: "Corpus replay",
+    nodeClass: "host",
+    summary: "Plays the acquirer from a captured conversation, with nothing in front of it.",
+    ports: [HOST_PORT],
+    device: "file",
+    latencyMs: 0,
+    fields: [
+      {
+        kind: "text",
+        key: "corpus",
+        label: "Corpus file",
+        placeholder: "captures/auth-2026-09-11.jsonl",
+        reaches: "file",
+      },
+      {
+        kind: "select",
+        key: "mode",
+        label: "Mode",
+        default: "verbatim",
+        options: [
+          { value: "verbatim", label: "Verbatim — resend exactly what was captured" },
+          { value: "freshen", label: "Freshen — new STAN, RRN and timestamps" },
+        ],
+      },
+    ],
+    caveats: [
+      "Verbatim resends a STAN and RRN the host has already seen. A host that approves a byte-identical replay has no duplicate detection at all, which is the question it asks.",
+      "Freshen rewrites only the volatile routing fields and leaves DE55 and its cryptogram exactly as captured — so it asks whether the ARQC is really bound to them.",
+    ],
+  },
+  {
+    key: "iso8583.host",
+    icon: "link",
+    title: "Payment host",
+    nodeClass: "host",
+    summary: "An acquirer, gateway or issuer reached over TCP with MLI framing.",
+    ports: [ACQUIRER_PORT],
+    latencyMs: 40,
+    fields: [
+      { kind: "text", key: "host", label: "Host", placeholder: "switch.test.local" },
+      { kind: "number", key: "port", label: "Port", default: 8583, min: 1, max: 65535 },
+      {
+        kind: "select",
+        key: "dialect",
+        label: "Dialect",
+        default: "iso8583-1987",
+        options: [
+          { value: "iso8583-1987", label: "ISO 8583:1987" },
+          { value: "base24", label: "BASE24" },
+          { value: "postilion", label: "Postilion" },
+        ],
+      },
+      { kind: "bool", key: "tls", label: "TLS", default: false },
+    ],
+    caveats: [
+      "A dialect is a guess about somebody else's system. Getting the framing wrong degrades to \"could not read that\" rather than to a corrupted link.",
+    ],
+  },
+  {
+    key: "iso8583.mutation",
+    icon: "swap",
+    title: "Host mutation",
+    nodeClass: "host",
+    summary: "Rewrites data elements and DE55 tags as an authorisation passes.",
+    ports: HOST_PASSTHROUGH_PORTS,
+    latencyMs: 1,
+    fields: [
+      {
+        kind: "yaml",
+        key: "playbook",
+        label: "Playbook",
+        default: DEFAULT_HOST_PLAYBOOK,
+        rows: 18,
+      },
+      { kind: "bool", key: "logMutations", label: "Log every rewrite", default: true },
+    ],
+    caveats: [
+      "A rewritten message is re-encoded from its decoded form, so the byte-exactness a passive relay guarantees is given up for the messages a rule actually changed. One that did not decode cleanly is never mutated, and a failed re-encode forwards the original.",
+    ],
+  },
+];
+
+export const NODE_TYPES: NodeType[] = [
+  ...TERMINALS,
+  ...TRANSFORMS,
+  ...CARDS,
+  ...HOSTS,
+];
 
 const BY_KEY = new Map(NODE_TYPES.map((t) => [t.key, t]));
 

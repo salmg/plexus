@@ -1,0 +1,9 @@
+version: 1
+name: host chain
+nodes:
+  - {id: replay-1, type: iso8583.replay, at: [0, 0], config: {corpus: captures/auth.jsonl, mode: verbatim}}
+  - {id: mut-1, type: iso8583.mutation, at: [300, 0], config: {}}
+  - {id: host-1, type: iso8583.host, at: [600, 0], config: {host: switch.test.local, port: 8583}}
+edges:
+  - {id: e1, from: replay-1:host, to: mut-1:acquirer}
+  - {id: e2, from: mut-1:host, to: host-1:acquirer}

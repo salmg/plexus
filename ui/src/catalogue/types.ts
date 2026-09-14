@@ -92,3 +92,34 @@ export const TERMINAL_PORT: PortSpec = {
 };
 
 export const PASSTHROUGH_PORTS: PortSpec[] = [TERMINAL_PORT, CARD_PORT];
+
+/**
+ * The two iso8583 ports, spelled once.
+ *
+ * The layer above the card: acquirer ⇄ gateway ⇄ issuer, where one side asks
+ * for an authorisation and the other answers it. Named the same way the apdu
+ * ports are — a requester is named for what it wants on the other end, a
+ * responder for whoever asks it. So a node that needs somewhere to send an
+ * authorisation has a *host* port, and a node that answers one has an
+ * *acquirer* port.
+ *
+ * The two layers meet at DE55: field 55 of an authorisation carries ICC data as
+ * BER-TLV, the same encoding a card emits. They are still separate channels, so
+ * a wire cannot cross between them — `canConnect` refuses it as a channel
+ * mismatch — but it is why the two halves of this project share a TLV core.
+ */
+export const HOST_PORT: PortSpec = {
+  id: "host",
+  channel: "iso8583",
+  role: "requester",
+  label: "host",
+};
+
+export const ACQUIRER_PORT: PortSpec = {
+  id: "acquirer",
+  channel: "iso8583",
+  role: "responder",
+  label: "acquirer",
+};
+
+export const HOST_PASSTHROUGH_PORTS: PortSpec[] = [ACQUIRER_PORT, HOST_PORT];

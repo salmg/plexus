@@ -262,6 +262,8 @@ const esCatalogue: Record<string, string> = {
   "port.card": "tarjeta",
   "port.terminal": "terminal",
   "port.oob": "fuera de banda",
+  "port.host": "host",
+  "port.acquirer": "adquirente",
 
   // ── Nodos: lado del terminal ─────────────────────────────────────────
   "node.simtrace2.title": "SimTrace2",
@@ -357,6 +359,35 @@ const esCatalogue: Record<string, string> = {
   "field.capture.strict.label": "Reproducción estricta",
   "field.capture.strict.help":
     "Fallar ante un comando que la captura no contiene, en vez de improvisar una respuesta.",
+
+  // ── Nodos: capa de host ──────────────────────────────────────────────
+  "node.iso8583.replay.title": "Reproducción de corpus",
+  "node.iso8583.replay.summary":
+    "Hace de adquirente a partir de una conversación capturada, sin nada delante.",
+  "field.iso8583.replay.corpus.label": "Fichero de corpus",
+  "field.iso8583.replay.mode.label": "Modo",
+  "node.iso8583.replay.caveat.0":
+    "Verbatim reenvía un STAN y un RRN que el host ya ha visto. Un host que aprueba una repetición idéntica byte a byte no tiene detección de duplicados, que es justo lo que se está preguntando.",
+  "node.iso8583.replay.caveat.1":
+    "Freshen reescribe sólo los campos volátiles de enrutado y deja DE55 y su criptograma tal cual se capturaron — así que pregunta si el ARQC está realmente ligado a esos campos.",
+
+  "node.iso8583.host.title": "Host de pagos",
+  "node.iso8583.host.summary":
+    "Un adquirente, pasarela o emisor al que se llega por TCP con tramado MLI.",
+  "field.iso8583.host.host.label": "Host",
+  "field.iso8583.host.port.label": "Puerto",
+  "field.iso8583.host.dialect.label": "Dialecto",
+  "field.iso8583.host.tls.label": "TLS",
+  "node.iso8583.host.caveat.0":
+    "Un dialecto es una conjetura sobre el sistema de otro. Equivocarse en el tramado degrada a «no pude leer eso», no a un enlace corrompido.",
+
+  "node.iso8583.mutation.title": "Mutación de host",
+  "node.iso8583.mutation.summary":
+    "Reescribe elementos de datos y etiquetas DE55 al pasar una autorización.",
+  "field.iso8583.mutation.playbook.label": "Playbook",
+  "field.iso8583.mutation.logMutations.label": "Registrar cada reescritura",
+  "node.iso8583.mutation.caveat.0":
+    "Un mensaje reescrito se vuelve a codificar desde su forma decodificada, así que se renuncia a la exactitud byte a byte en los mensajes que una regla haya cambiado. Uno que no decodificó limpiamente nunca se muta, y si la recodificación falla se reenvía el original.",
 
   // ── Nodos: transformaciones ──────────────────────────────────────────
   "node.mutation.title": "Mutación",

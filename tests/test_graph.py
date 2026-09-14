@@ -1016,3 +1016,92 @@ def test_an_empty_canvas_is_not_an_error():
     """
     graph = build("version: 1\nname: empty\nnodes: []\nedges: []\n")
     assert [p.level for p in validate(graph)] == ["warning"]
+
+
+# ── The host layer ────────────────────────────────────────────────────────────
+#
+# ISO 8583 is a second channel, not a second kind of edge. The rules that make
+# an apdu wire legal are written against channel and role rather than against
+# the apdu ports by name, so they covered this the day the nodes arrived — these
+# pin that, because "it happened to work" and "it is meant to work" look the
+# same until something asserts the second one.
+
+
+def test_a_host_chain_is_a_legal_graph():
+    graph = build(
+        """
+        version: 1
+        name: host chain
+        nodes:
+          - id: replay-1
+            type: iso8583.replay
+            at: [0, 0]
+            config: {corpus: captures/auth.jsonl, mode: verbatim}
+          - id: host-1
+            type: iso8583.host
+            at: [300, 0]
+            config: {host: switch.test.local, port: 8583}
+        edges:
+          - from: replay-1:host
+            to: host-1:acquirer
+        """
+    )
+    assert validate(graph) == []
+
+
+def test_a_wire_between_the_layers_is_refused():
+    """
+    The card layer and the host layer meet at DE55, not at a wire. An apdu port
+    and an iso8583 port share no channel, so there is no edge to draw.
+    """
+    graph = build(
+        """
+        version: 1
+        name: crossed layers
+        nodes:
+          - id: probe-1
+            type: probe
+            at: [0, 0]
+            config: {depth: quick}
+          - id: host-1
+            type: iso8583.host
+            at: [300, 0]
+            config: {host: switch.test.local, port: 8583}
+        edges:
+          - from: probe-1:card
+            to: host-1:acquirer
+        """
+    )
+    assert "wrong-channel" in [p.code for p in validate(graph) if p.blocking]
+
+
+def test_the_host_nodes_say_they_cannot_bind_yet():
+    """
+    They report `pending`, not `ready`. The engine picks a node's registry by
+    class, and a class it did not know about fell through to "ready" — so all
+    three claimed they would bind, and `plexus nodes` would have left them
+    unmarked.
+    """
+    from plexus.runtime.engine import node_implementations, node_requirements
+
+    implementations = node_implementations()
+    requirements = node_requirements()
+    for key in ("iso8583.replay", "iso8583.host", "iso8583.mutation"):
+        assert implementations[key] == "pending", key
+        assert requirements.get(key), "%s does not say what it needs" % key
+
+
+def test_a_host_node_refuses_by_name_rather_than_as_a_missing_terminal():
+    """
+    The engine binds by position — head to the terminal registry, tail to the
+    card one — which is right for an apdu chain and wrong for this one. Left to
+    itself it said "No terminal implementation for 'iso8583.replay'", which
+    reads like a missing adapter rather than a layer it does not drive.
+    """
+    from plexus.nodes.host import HostUnavailable
+    from plexus.nodes.host import build as build_host
+
+    with pytest.raises(HostUnavailable) as refused:
+        build_host("iso8583.replay", {})
+    assert "iso8583.replay" in str(refused.value)
+    assert "host layer" in str(refused.value)

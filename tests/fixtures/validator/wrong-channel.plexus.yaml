@@ -1,0 +1,7 @@
+version: 1
+name: a wire between the layers
+nodes:
+  - {id: probe-1, type: probe, at: [0, 0], config: {depth: quick}}
+  - {id: host-1, type: iso8583.host, at: [300, 0], config: {host: switch.test.local, port: 8583}}
+edges:
+  - {id: e1, from: probe-1:card, to: host-1:acquirer}

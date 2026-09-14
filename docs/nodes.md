@@ -296,13 +296,85 @@ A reader on another machine, reached over atrium's card proxy.
 
 ---
 
-## Host layer — not built
+## Host layer — nodes on the other channel
 
-ISO 8583 exists as a second channel in the model with no nodes on it yet. The
-interesting one is a **DE55 bridge**: field 55 of an authorisation carries ICC
-data as BER-TLV — the same encoding a card emits — so it is where the two
-halves atrium describes actually meet. Today that meeting is prose in atrium's
-README; on a canvas it would be a node you could draw.
+The conversation above the card. Where the card side is terminal ⇄ card
+speaking APDUs, this is **acquirer ⇄ gateway ⇄ issuer** speaking ISO 8583, and
+atrium's `host/` package has the whole of it — framing, dialects, pack and
+unpack, a passive relay, a mutating proxy, corpus replay and cryptogram
+verification. None of it imports pyscard, so it runs with no reader attached.
+
+These sit on the **`iso8583` channel**, so they wire to each other and never to
+an apdu node — a wire between the layers is refused as a channel mismatch. The
+two meet at **DE55** instead: field 55 of an authorisation carries ICC data as
+BER-TLV, the same encoding a card emits, which is why both halves of the
+toolkit parse and mutate it with one TLV core.
+
+Their ports are named the way the apdu ones are — a requester for what it wants
+on the other end, a responder for whoever asks it. So a node that needs
+somewhere to send an authorisation has a **host port**, and one that answers an
+authorisation has an **acquirer port**.
+
+> **None of them binds yet, and not for want of an adapter.** The engine drives
+> one shape of conversation: the card's `transmit(command) → response`, where a
+> terminal owns the loop and every step is a round trip. A host link is `send`
+> and `receive` over a framed socket — messages are not strictly paired, either
+> end may speak first, and a reply can arrive for a request two ahead. That is a
+> second driving model beside the first, not another transport. They draw,
+> check, cost out, save and share meanwhile; `plexus run` refuses them by name.
+
+### Corpus replay · needs an engine that drives the host layer
+
+Plays the acquirer from a captured conversation, with nothing in front of it.
+Asks; has a host port.
+
+| Field | |
+|---|---|
+| Corpus file | the captured conversation to replay |
+| Mode | `verbatim`, or `freshen` |
+
+**Verbatim** resends exactly what was captured, STAN and RRN included — and a
+host that approves a byte-identical replay has no duplicate detection at all,
+which is the question it asks. **Freshen** rewrites only the volatile routing
+fields and leaves DE55 and its cryptogram untouched, which asks the sharper one:
+is the ARQC actually bound to those fields?
+
+### Payment host · needs an engine that drives the host layer, and a host to reach
+
+An acquirer, gateway or issuer reached over TCP with MLI framing. Answers; has
+an acquirer port.
+
+| Field | |
+|---|---|
+| Host | where the switch is |
+| Port | its port, `8583` by default |
+| Dialect | `ISO 8583:1987`, `BASE24` or `Postilion` |
+| TLS | wrap the link |
+
+A dialect is a guess about somebody else's system, which is why it is a file in
+atrium rather than code. Getting the framing wrong degrades to "could not read
+that" rather than to a corrupted link.
+
+### Host mutation · needs an engine that drives the host layer
+
+Rewrites data elements and DE55 tags as an authorisation passes. Sits in the
+middle: an acquirer port on the left, a host port on the right.
+
+| Field | |
+|---|---|
+| Playbook | atrium's host playbook format; files from `host/playbooks/` paste in unchanged |
+| Log every rewrite | one line per mutation that fired |
+
+The default playbook is atrium's `amount-mismatch`, which is the clearest
+demonstration of why this layer exists: the amount appears twice in an
+authorisation — as DE4, which the switch routes and authorises on, and as tag
+9F02 inside DE55, which the cryptogram was computed over. Raising one and not
+the other asks which copy the far side actually believes.
+
+A rewritten message is re-encoded from its decoded form, so the byte-exactness
+a passive relay guarantees is given up for the messages a rule actually changed.
+One that did not decode cleanly is never mutated, and a failed re-encode
+forwards the original.
 
 ---
 

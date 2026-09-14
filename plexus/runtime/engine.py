@@ -28,6 +28,7 @@ from plexus.catalogue import CATALOGUE
 from plexus.graph import Graph, Problem, validate
 from plexus.graph import chain as chain_of
 from plexus.nodes import card as card_nodes
+from plexus.nodes import host as host_nodes
 from plexus.nodes import terminal as terminal_nodes
 from plexus.nodes import transform as transform_nodes
 from plexus.runtime.events import (
@@ -221,6 +222,18 @@ class Engine:
             self._means[node_id] = RollingMean()
         for edge_id in self._edge_ids:
             self._edges[edge_id] = EdgeTelemetry()
+
+        # A host-layer chain is refused before any of this, and by name.
+        #
+        # The engine binds by position — head to the terminal registry, tail to
+        # the card one — which is right for every apdu chain and wrong for an
+        # iso8583 one, where the head is neither. Left to itself it reported
+        # "No terminal implementation for 'iso8583.replay'", which reads like a
+        # missing adapter rather than a layer the engine does not drive yet.
+        for node in steps:
+            spec = CATALOGUE.get(node.type)
+            if spec is not None and spec.node_class == "host":
+                host_nodes.build(node.type, node.config)  # always raises
 
         # Terminal first, because it is the one that costs nothing to refuse.
         # It is built rather than connected — nothing is claimed here — so a
@@ -797,6 +810,8 @@ def node_implementations() -> Dict[str, str]:
             out[key] = "pending" if key in card_nodes.PENDING else "ready"
         elif node_type.node_class == "terminal":
             out[key] = "pending" if key in terminal_pending else "ready"
+        elif node_type.node_class == "host":
+            out[key] = "pending" if key in host_nodes.PENDING else "ready"
         else:
             out[key] = "ready"
     return out
@@ -813,6 +828,7 @@ def node_requirements() -> Dict[str, str]:
     out: Dict[str, str] = {}
     out.update(card_nodes.PENDING)
     out.update(terminal_nodes.pending())
+    out.update(host_nodes.PENDING)
     return out
 
 
