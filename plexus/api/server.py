@@ -43,7 +43,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, Set
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -194,6 +194,36 @@ WEB_ROOT = Path(__file__).resolve().parent.parent / "web"
 
 def editor_is_bundled() -> bool:
     return (WEB_ROOT / "index.html").is_file()
+
+
+class _EditorFiles(StaticFiles):
+    """
+    Static files from a directory that is allowed not to exist.
+
+    `check_dir=False` only moves starlette's check from mount time to request
+    time, where it raises `RuntimeError` instead — so an install with no editor
+    built into it answered `/` with a 500 rather than a 404. Measured on a
+    clean checkout, which is the only place it shows: a machine that has ever
+    run `npm run build:bundle` has the directory and never sees it.
+
+    The directory has to stay optional rather than be checked once at mount,
+    because `plexus up` builds the editor *after* importing this module. So it
+    is asked per request, which costs a `stat` on a path that is almost always
+    there.
+    """
+
+    async def check_config(self) -> None:
+        """
+        Starlette checks the directory once, on the first request, and raises
+        `RuntimeError` when it is not there. That check is the 500; overriding
+        `get_response` alone was not enough, because this runs before it.
+        """
+        return None
+
+    async def get_response(self, path: str, scope):
+        if not Path(self.directory).is_dir():  # type: ignore[arg-type]
+            raise HTTPException(status_code=404)
+        return await super().get_response(path, scope)
 
 
 def create_app() -> FastAPI:
@@ -359,7 +389,7 @@ def create_app() -> FastAPI:
     # is a 404 either way.
     app.mount(
         "/",
-        StaticFiles(directory=str(WEB_ROOT), html=True, check_dir=False),
+        _EditorFiles(directory=str(WEB_ROOT), html=True, check_dir=False),
         name="editor",
     )
 

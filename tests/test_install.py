@@ -124,6 +124,26 @@ def test_an_editor_built_after_the_app_exists_is_still_served(monkeypatch, tmp_p
         assert "<title>Plexus</title>" in page.text
 
 
+def test_a_runtime_with_no_editor_404s_rather_than_500s(monkeypatch, tmp_path):
+    """
+    Measured on a clean checkout, and nowhere else.
+
+    `check_dir=False` does not make the directory optional — it moves
+    starlette's check from mount time to the first request, where it raises
+    `RuntimeError` instead. So an install with no editor built into it answered
+    `/` with a 500. Every machine that has ever run `npm run build:bundle` has
+    the directory and never sees it; CI, on a fresh clone, saw it immediately.
+    """
+    from plexus.api import server
+
+    monkeypatch.setattr(server, "WEB_ROOT", tmp_path / "never-built")
+    with TestClient(server.create_app()) as client:
+        assert client.get("/").status_code == 404
+        assert client.get("/assets/index.js").status_code == 404
+        # And the runtime's own routes still answer, mount or no mount.
+        assert client.get("/api/health").status_code == 200
+
+
 def test_up_without_a_bundle_says_what_to_run(monkeypatch, capsys):
     """
     A wheel built without the editor still installs, and `--no-build` reaches
