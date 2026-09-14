@@ -32,7 +32,17 @@ runtime = [
   "uvicorn[standard]>=0.29.0",
   "websockets>=12.0",
 ]
+# Everything needed to run the suite in `docs/install.md`, which says
+# `pip install -e ".[dev]"` and then `pytest`. It could not: three test modules
+# drive the WebSocket server and import fastapi, and starlette's TestClient
+# needs httpx, and neither was here. It passed locally only because a developer
+# who has run `plexus serve` already has the runtime extra installed.
+#
+# CI never caught it either, because CI had never run — the workflow triggers on
+# `main` and the branch was `master` until the repository was pushed.
 dev = [
+  "plexus[runtime]",
+  "httpx>=0.27",
   "pytest>=8.0",
   "ruff>=0.5",
 ]
