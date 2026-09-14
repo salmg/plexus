@@ -239,7 +239,7 @@ def create_app() -> FastAPI:
         # The run outlives a socket, not the process. Whatever is still bound
         # when the server goes down is released here, and this is the only
         # place left that releases without being asked.
-        await asyncio.get_event_loop().run_in_executor(None, runtime.engine.stop)
+        await asyncio.get_running_loop().run_in_executor(None, runtime.engine.stop)
 
     app = FastAPI(
         title="Plexus runtime",

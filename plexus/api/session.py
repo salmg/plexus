@@ -361,7 +361,7 @@ class Session:
             return
 
         self.graph = graph
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             # The engine validates the graph itself rather than trusting the
             # editor's verdict: this one arrived over a socket, and it names
@@ -373,7 +373,7 @@ class Session:
             await self.flush()
 
     async def _stop(self) -> None:
-        await asyncio.get_event_loop().run_in_executor(None, self.engine.stop)
+        await asyncio.get_running_loop().run_in_executor(None, self.engine.stop)
         await self.flush()
 
     async def _command(self, message: Dict[str, Any]) -> None:
@@ -387,7 +387,7 @@ class Session:
 
         # `tx` reaches the card, so it runs off the event loop like everything
         # else that can block.
-        lines, level = await asyncio.get_event_loop().run_in_executor(
+        lines, level = await asyncio.get_running_loop().run_in_executor(
             None, console.run, self.engine, self.graph, line
         )
         frame: Dict[str, Any] = {"type": "result", "id": request_id, "lines": lines}

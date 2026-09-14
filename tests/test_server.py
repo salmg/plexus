@@ -631,7 +631,9 @@ def test_a_flush_sends_the_trace_then_the_telemetry_then_the_state():
     session._offer({"type": "node", "id": "n", "telemetry": {}})
     session._offer({"type": "state", "state": "running"})
 
-    asyncio.get_event_loop().run_until_complete(session.flush())
+    # `asyncio.run`, not `get_event_loop().run_until_complete`: there is no
+    # loop in this thread, and since 3.12 get_event_loop no longer makes one.
+    asyncio.run(session.flush())
 
     assert len(sent) == 1 and sent[0]["type"] == "batch"
     assert [f["type"] for f in sent[0]["frames"]] == ["apdu", "node", "state"]

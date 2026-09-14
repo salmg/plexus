@@ -22,6 +22,8 @@ import queue
 import time
 from typing import Any, Dict, List
 
+import anyio
+
 
 def unwrap(frame: Dict[str, Any]) -> List[Dict[str, Any]]:
     """A batch is a frame carrying frames; everything else is one."""
@@ -53,16 +55,49 @@ def pull(socket, deadline: float) -> Dict[str, Any]:
     worst failure mode available: it reads as a broken machine, and on the
     machine that wrote the capture it never happened at all.
 
-    Reaching into `_send_queue` is deliberate. It is where the app's outbound
-    frames land, and it is the only place a deadline can be applied.
+    Reaching into starlette's internals is deliberate. The outbound frames are
+    where a deadline can be applied, and starlette keeps them in a different
+    place depending on its version — so both are known about here, and neither
+    being found is an error rather than a silent unbounded read.
+
+    That fallback used to be `return socket.receive_json()`, with a comment
+    saying it was for "a starlette that moved the queue". Starlette moved the
+    queue: 0.44 has `_send_queue`, 1.6 has an anyio stream read through a
+    portal. Python 3.8 resolves the old one and 3.12 the new, so the suite
+    passed on the floor and hung on the version a rig actually runs — in
+    `test_waiting_for_a_frame_that_never_comes_fails_rather_than_hanging`,
+    which is the test that exists to prove this cannot happen.
     """
+    remaining = max(deadline - time.monotonic(), 0.0)
+
+    # starlette < 1.0 — a plain queue of outbound messages.
     outbound = getattr(socket, "_send_queue", None)
-    if outbound is None:  # pragma: no cover - a starlette that moved the queue
-        return socket.receive_json()
-    try:
-        message = outbound.get(timeout=max(deadline - time.monotonic(), 0.0))
-    except queue.Empty:
-        raise Timeout() from None
+    if outbound is not None:
+        try:
+            message = outbound.get(timeout=remaining)
+        except queue.Empty:
+            raise Timeout() from None
+    else:
+        # starlette >= 1.0 — an anyio memory stream, read through the blocking
+        # portal the test session already owns.
+        stream = getattr(socket, "_send_rx", None)
+        portal = getattr(socket, "portal", None)
+        if stream is None or portal is None:  # pragma: no cover - a third shape
+            raise RuntimeError(
+                "No way to read this starlette TestClient with a deadline: it "
+                "has neither `_send_queue` nor `_send_rx`. Refusing rather "
+                "than reading without one, because an unbounded read hangs the "
+                "suite instead of failing it."
+            )
+
+        async def _receive() -> Any:
+            with anyio.fail_after(remaining):
+                return await stream.receive()
+
+        try:
+            message = portal.call(_receive)
+        except TimeoutError:
+            raise Timeout() from None
     if isinstance(message, BaseException):
         raise message
     if message.get("type") == "websocket.close":
