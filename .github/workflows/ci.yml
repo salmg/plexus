@@ -40,18 +40,36 @@ jobs:
         python: ["3.8", "3.12"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
-          # `atrium` is a private repository, and the job's own GITHUB_TOKEN is
-          # scoped to this one — so the submodule clone comes back
-          # "Repository not found", which reads like a deleted repo rather than
-          # a permission. A token that can read it goes in ATRIUM_TOKEN.
-          #
-          # Falls back to the default token when the secret is not set, so this
-          # job behaves exactly as it did before rather than failing earlier and
-          # more confusingly. The other jobs check out without submodules on
-          # purpose and are unaffected either way.
-          token: ${{ secrets.ATRIUM_TOKEN || github.token }}
+
+      # The submodule is fetched here rather than by `submodules: true` above,
+      # and that is the whole point.
+      #
+      # `atrium` is a private repository, and this job's own GITHUB_TOKEN is
+      # scoped to `plexus` — so the submodule clone comes back "Repository not
+      # found", which reads like a deleted repository and is really a
+      # permission. The obvious fix, handing checkout a `token:` that can read
+      # atrium, is wrong: checkout uses that token for the *main* repository
+      # too, so a token scoped to atrium made this job fail with a 403 on
+      # plexus itself. Measured, in that order.
+      #
+      # Two clones, two credentials: the default token reads plexus above, and
+      # ATRIUM_TOKEN reads atrium here. The token needs only `Contents: read`
+      # on atrium — nothing on this repository.
+      - name: Fetch atrium
+        env:
+          ATRIUM_TOKEN: ${{ secrets.ATRIUM_TOKEN }}
+        run: |
+          if [ -z "$ATRIUM_TOKEN" ]; then
+            echo "ATRIUM_TOKEN is not set."
+            echo "This job drives atrium's own mutation engine and recorded"
+            echo "transport, so it needs the submodule. Set a token with"
+            echo "Contents: read on salmg/atrium."
+            exit 1
+          fi
+          git config --global \
+            url."https://x-access-token:${ATRIUM_TOKEN}@github.com/".insteadOf \
+            "https://github.com/"
+          git submodule update --init --depth 1 vendor/atrium
 
       - uses: actions/setup-python@v5
         with:
