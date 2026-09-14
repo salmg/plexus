@@ -14,6 +14,8 @@ from plexus.adapters.atrium import (  # noqa: F401
     AtriumUnavailable,
     load_mutation_engine,
     load_recorded_card,
+    open_local_card,
+    pcsc_readers,
     require_atrium,
 )
 
@@ -21,5 +23,7 @@ __all__ = [
     "AtriumUnavailable",
     "load_mutation_engine",
     "load_recorded_card",
+    "open_local_card",
+    "pcsc_readers",
     "require_atrium",
 ]

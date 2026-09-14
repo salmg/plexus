@@ -153,17 +153,28 @@ a model is configured.
 ## What is not built
 
 **This is the honest part of this page.** The engine binds, drives, rewrites,
-reports and releases — but the only card it can bind today is a recorded
-capture, and the terminals are the fingerprint probe and the EMV agent, the
-agent only once a model back end is configured (`ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY`, or a local `ATRIUM_LLM_BASE_URL`).
+reports and releases. The cards it can bind today are a recorded capture and a
+contact card in a **PC/SC reader**; the terminals are the fingerprint probe and
+the EMV agent, the agent only once a model back end is configured
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or a local `ATRIUM_LLM_BASE_URL`).
 
-Every other node **resolves in a graph and refuses at bind time, naming what it
-needs**:
+The PC/SC reader is discovered live: plug one in and it appears in the editor's
+reader picker, `plexus nodes` stops marking `pcsc` with a dot, and `/api/health`
+reports it `ready`. It needs pyscard, which is the `hardware` extra:
+
+```bash
+pip install -e ".[hardware]"
+```
+
+On a machine with no reader — or no pyscard — `pcsc` is `pending` again and says
+so, exactly like the nodes that have no implementation at all.
+
+Every other hardware node **resolves in a graph and refuses at bind time, naming
+what it needs**:
 
 ```
-error: The pcsc node is not implemented in this build.
-       It needs pyscard and a reader attached to this machine.
+error: The cardproxy node is not implemented in this build.
+       It needs atrium's remote transport and a running card proxy.
 ```
 
 That is deliberate. A card node that silently pretends is the worst possible
@@ -179,7 +190,7 @@ than design work:
 
 | Node | atrium already provides |
 |---|---|
-| PC/SC reader | `transport.local.LocalCardTransport` |
+| PC/SC reader | `transport.local.LocalCardTransport` — **done** |
 | ACR122U field | `transport.contactless.ContactlessTransport` |
 | NFCGate session | `transport.nfcgate.NFCGateTransport` |
 | Remote card | `transport.remote.RemoteCardTransport` |
@@ -189,14 +200,20 @@ than design work:
 
 `CardTransport` is `connect` / `get_atr` / `transmit` / `disconnect`, which is
 exactly what a card-side node has to be. The four transports above are
-therefore close to drop-in — what they need is device discovery, which is the
-one thing the engine currently returns empty:
+therefore close to drop-in. The PC/SC reader is the worked example: the node is
+`PcscCard` in `plexus/nodes/card.py`, a thin wrapper over
+`LocalCardTransport`, and the readers it binds come from device discovery,
+which the engine now answers from what atrium can see:
 
 ```python
 def devices(self) -> List[Any]:
-    """Empty in this build, and deliberately so rather than invented."""
-    return []
+    """Hardware the runtime can see right now."""
+    return discover_devices()
 ```
+
+`discover_devices` asks `plexus.adapters.atrium.pcsc_readers`, the one place
+atrium's `core.readers` is reached. Add a transport by giving discovery the
+kind it reports and writing the node beside `PcscCard`.
 
 Everything in `plexus/adapters/` is the only place that imports atrium. When
 atrium moves, what breaks is in there.

@@ -100,14 +100,21 @@ class Engine:
 
     # ── Arm ─────────────────────────────────────────────────────────────
 
-    def arm(self, graph: Graph, devices=()) -> None:
+    def arm(self, graph: Graph, devices=None) -> None:
         """Check the graph, bind every node, and start driving."""
         with self._gate:
             self._arm(graph, devices)
 
-    def _arm(self, graph: Graph, devices=()) -> None:
+    def _arm(self, graph: Graph, devices=None) -> None:
         if self.running:
             raise EngineError("Already running. Stop first.")
+
+        # None means "ask the machine", so a graph armed over the socket is
+        # checked against the readers actually attached — a device it names but
+        # nothing here holds is caught before a card is opened. A caller with a
+        # list of its own (a test) still passes one.
+        if devices is None:
+            devices = self.devices()
 
         # ── Checked before anything is touched ──────────────────────────
         #
@@ -648,16 +655,18 @@ class Engine:
 
     def devices(self) -> List[Any]:
         """
-        Hardware the runtime can see.
+        Hardware the runtime can see right now.
 
-        Empty in this build, and deliberately so rather than invented: device
-        discovery belongs with the adapters that would bind the devices, and
-        claiming a reader exists that nothing can open would be worse than
-        saying nothing. The graph checks treat an unknown device id as unknown
-        rather than missing, so an empty list does not block a graph — it just
-        means nothing can be confirmed present.
+        A live question, asked each time: a reader is plugged in or unplugged
+        between one call and the next, and the honest answer is whatever is
+        there when asked. Discovery lives with the adapters that would bind the
+        device — see `discover_devices` — so what appears here is exactly what
+        `arm` could open, never a reader claimed that nothing can. The graph
+        checks treat an unknown device id as unknown rather than missing, so a
+        graph naming a reader that is not attached still loads; it just cannot
+        be confirmed present.
         """
-        return []
+        return discover_devices()
 
     def telemetry(self, node_id: str) -> NodeTelemetry:
         return self._telemetry.get(node_id, NodeTelemetry())
@@ -800,14 +809,16 @@ def node_implementations() -> Dict[str, str]:
     Derived from the node modules rather than a list kept beside them, so it
     cannot drift from what would really happen at bind time.
     """
-    # `pending()` rather than the `PENDING` constant: the agent's answer depends
-    # on whether a model is configured here, not on how the build was made.
+    # `pending()` rather than the `PENDING` constant: the answer depends on the
+    # machine — a card reader attached, a model configured — not on how the
+    # build was made.
+    card_pending = card_nodes.pending()
     terminal_pending = terminal_nodes.pending()
     out: Dict[str, str] = {}
     for node_type in CATALOGUE:
         key = node_type.key
         if node_type.node_class == "card":
-            out[key] = "pending" if key in card_nodes.PENDING else "ready"
+            out[key] = "pending" if key in card_pending else "ready"
         elif node_type.node_class == "terminal":
             out[key] = "pending" if key in terminal_pending else "ready"
         elif node_type.node_class == "host":
@@ -826,9 +837,43 @@ def node_requirements() -> Dict[str, str]:
     are the same sentence.
     """
     out: Dict[str, str] = {}
-    out.update(card_nodes.PENDING)
+    out.update(card_nodes.pending())
     out.update(terminal_nodes.pending())
     out.update(host_nodes.PENDING)
+    return out
+
+
+def discover_devices() -> List[Any]:
+    """
+    The hardware this runtime can see right now, as graph `Device`s.
+
+    Today that is the PC/SC readers atrium reports. The virtual reader is left
+    out on purpose: it is atrium's own output side — the thing presenting a
+    card to a terminal — not a slot a card sits in, so offering it as somewhere
+    to bind a card would be the one wiring mistake `core.readers` exists to
+    prevent.
+
+    Never raises. Discovery runs on a poll and beside the editor; an exception
+    here would be worse than an empty list, and an empty list is the honest
+    answer on a laptop with nothing plugged in.
+    """
+    from plexus.adapters import atrium as _atrium
+    from plexus.graph import Device
+
+    out: List[Any] = []
+    for reader in _atrium.pcsc_readers():
+        if reader.get("virtual"):
+            continue
+        name = reader["name"]
+        out.append(
+            Device(
+                id="pcsc:%s" % name,
+                kind="pcsc",
+                name=name,
+                available=True,
+                detail=reader.get("kind") or None,
+            )
+        )
     return out
 
 

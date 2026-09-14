@@ -130,8 +130,8 @@ def _devices(engine: Engine, graph: Optional[Graph], args) -> Result:
     devices = engine.devices()
     if not devices:
         return [
-            "No devices. This build binds a recorded capture and nothing else;",
-            "device discovery arrives with the hardware adapters.",
+            "No readers found. Plug one in, or check that the PC/SC service is",
+            "running and pyscard is installed (pip install -e '.[hardware]').",
         ], None
     return [
         "%-4s %-18s %s" % ("ok" if d.available else "gone", d.id, d.name) for d in devices

@@ -142,6 +142,51 @@ def load_recorded_card(path: str | Path, strict: bool = False) -> Any:
         raise AtriumUnavailable(str(exc)) from exc
 
 
+def pcsc_readers() -> list[dict]:
+    """
+    The PC/SC readers atrium can see on this machine, newest question each call.
+
+    Each entry is ``{"index", "name", "kind", "virtual", "pn532"}`` — atrium's
+    own ``Reader.to_dict()``.  The list is empty when there is no atrium
+    checkout, no pyscard, or no reader plugged in: the ordinary states of a
+    machine running only half this toolkit.
+
+    It never raises.  Discovery runs on a poll and beside the editor, so an
+    exception here would be worse than an empty list on a laptop with nothing
+    attached — the reader simply does not appear, which is the truth.
+    """
+    try:
+        require_atrium()
+        from core.readers import probe
+    except (AtriumUnavailable, ImportError):
+        return []
+    try:
+        readers, _problem = probe()  # probe() is documented never to raise
+    except Exception:  # noqa: BLE001 — belt and braces around a third party
+        return []
+    return [r.to_dict() for r in readers]
+
+
+def open_local_card(reader: "int | str | None") -> Any:
+    """
+    Atrium's local PC/SC transport, addressed by index or name fragment.
+
+    The object returned is the ``CardTransport`` shape a card-side node needs —
+    connect / get_atr / transmit / disconnect — so Plexus never imports an
+    atrium type to hold it.  ``None`` means "pick the sensible default", which
+    is what atrium's resolver does.  Constructing it touches no hardware; the
+    reader is opened at ``connect()``.
+    """
+    require_atrium()
+    try:
+        from transport.local import LocalCardTransport
+    except ImportError as exc:  # pragma: no cover - only if atrium moves
+        raise AtriumUnavailable(
+            f"atrium's local transport will not import: {exc}"
+        ) from exc
+    return LocalCardTransport(reader)
+
+
 def load_mutation_engine(config_path: str | Path, card_execute=None) -> Any:
     """
     Atrium's mutation engine, configured from a playbook on disk.

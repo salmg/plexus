@@ -407,7 +407,10 @@ def test_health_says_what_this_build_can_bind(client):
     body = client.get("/api/health").json()
     assert body["protocol"] == 1
     assert body["nodes"]["capture"] == "ready"
-    assert body["nodes"]["pcsc"] == "pending"
+    # cardproxy needs a daemon this build cannot start, so it is pending on any
+    # machine. pcsc is conditional now — see test_pcsc.py — so it is not pinned
+    # here, where the test runner's own hardware would decide the answer.
+    assert body["nodes"]["cardproxy"] == "pending"
 
 
 def test_stop_overtakes_a_console_command_that_is_still_running(client, monkeypatch):
@@ -706,12 +709,46 @@ def test_nodes_and_edges_report_the_armed_chain(client):
         socket.__exit__(None, None, None)
 
 
-def test_devices_says_this_build_has_none(client):
+def test_devices_says_what_to_do_when_no_reader_is_attached(client, monkeypatch):
+    # Discovery is live now, so this pins the empty case rather than the build:
+    # a runtime with no reader tells you how to get one seen, and does not just
+    # say nothing.
+    monkeypatch.setattr("plexus.runtime.engine.discover_devices", lambda: [])
     with client.websocket_connect("/ws") as socket:
         socket.send_json({"type": "hello", "version": 1})
         collect(socket, until="state")
         lines = answer(socket, "devices")["lines"]
-        assert any("No devices" in line for line in lines)
+        assert any("No readers found" in line for line in lines)
+
+
+def test_a_discovered_reader_reaches_the_editor(client, monkeypatch):
+    # The devices frame the editor reads on connect carries whatever the
+    # runtime can see, so a reader atrium reports arrives with the fields the
+    # Inspector's picker needs.
+    from plexus.graph import Device
+
+    reader = Device(
+        id="pcsc:SCM Microsystems Inc. SCR 3310",
+        kind="pcsc",
+        name="SCM Microsystems Inc. SCR 3310",
+        available=True,
+        detail="contact",
+    )
+    monkeypatch.setattr("plexus.runtime.engine.discover_devices", lambda: [reader])
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        frames = collect(socket, until="state")
+    devices_frame = next(f for f in frames if f["type"] == "devices")
+    assert devices_frame["devices"] == [
+        {
+            "id": "pcsc:SCM Microsystems Inc. SCR 3310",
+            "kind": "pcsc",
+            "name": "SCM Microsystems Inc. SCR 3310",
+            "host": "",
+            "available": True,
+            "detail": "contact",
+        }
+    ]
 
 
 def test_check_reruns_the_graph_checks(client):
@@ -809,8 +846,11 @@ def test_hello_says_which_nodes_this_runtime_cannot_bind(client):
         needs = frame["needs"]
 
         # Every key is a node type, and every value says what it wants.
-        assert "pcsc" in needs
-        assert "reader" in needs["pcsc"]
+        # cardproxy and nfcgate need daemons this build never starts, so they
+        # are here on any machine; pcsc is conditional (test_pcsc.py) and so is
+        # not asserted where the runner's own hardware would decide it.
+        assert "cardproxy" in needs
+        assert "card proxy" in needs["cardproxy"]
         assert "nfcgate" in needs
         # The ones this build really does bind are absent, not present-and-empty.
         for ready in ("probe", "capture", "trace", "mutation", "inject"):
@@ -843,9 +883,11 @@ def test_a_node_this_build_cannot_bind_is_refused_with_the_same_sentence(client)
     """
     from plexus.runtime import node_requirements
 
+    # cardproxy, not pcsc: it is refused on any machine, where pcsc now binds a
+    # real reader when one is attached (test_pcsc.py).
     graph = graph_frame()
-    graph["nodes"][1]["type"] = "pcsc"
-    graph["nodes"][1]["config"] = {"device": "pcsc:0"}
+    graph["nodes"][1]["type"] = "cardproxy"
+    graph["nodes"][1]["config"] = {}
 
     with client.websocket_connect("/ws") as socket:
         socket.send_json({"type": "hello", "version": 1})
@@ -853,4 +895,4 @@ def test_a_node_this_build_cannot_bind_is_refused_with_the_same_sentence(client)
         socket.send_json({"type": "arm", "graph": graph})
         error = next(f for f in collect(socket, until="error") if f["type"] == "error")
 
-    assert node_requirements()["pcsc"] in error["message"]
+    assert node_requirements()["cardproxy"] in error["message"]

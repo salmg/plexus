@@ -277,11 +277,14 @@ an atrium playbook — the files in `vendor/atrium/playbooks/` paste in unchange
 Being straight about the line:
 
 - **The hardware nodes.** The engine binds, drives, rewrites, reports and
-  releases — but the only card it can bind today is a recorded capture and the
-  only terminal is the fingerprint probe. PC/SC, the ACR122U in either mode,
-  NFCGate, the card proxy, SimTrace2 and vpcd all resolve, and all refuse at
-  bind time naming what they need. They are adapter work against seams that
-  already exist in atrium, and they need the rig to be worth writing.
+  releases. The cards it binds today are a recorded capture and a contact card
+  in a **PC/SC reader** (`pip install -e ".[hardware]"`, then plug one in — it
+  is discovered live and appears in the editor's reader picker); the only
+  terminal is the fingerprint probe. The ACR122U in either mode, NFCGate, the
+  card proxy, SimTrace2 and vpcd all resolve, and all refuse at bind time
+  naming what they need. They are adapter work against seams that already exist
+  in atrium — PC/SC is the worked example of that work — and they need the rig
+  to be worth writing.
 - **Host-layer nodes.** ISO 8583 is a second channel in the model (`iso8583`)
   with no nodes on it yet. The interesting one is a DE55 bridge, where the two
   halves atrium describes actually meet.

@@ -118,11 +118,21 @@ than repeating advice that cannot be followed. Either clone the repository, or
 keep the two-process arrangement: `plexus serve` here, and an editor you
 already have pointed at it.
 
-### `The pcsc node is not implemented in this build`
+### The PC/SC reader node will not bind
 
-It is not a broken graph. That node needs hardware adapters that are not
-written yet, and it says which. `plexus nodes` marks every one of them.
-See [Running on hardware](hardware.md).
+The `pcsc` node is implemented, so the reason is one of two, and it says which:
+
+- **`It needs pyscard and a reader attached to this machine`** — either no
+  reader is plugged in, or pyscard is not installed. Install it with the
+  `hardware` extra (`pip install -e ".[hardware]"`) and check the reader shows
+  up: `plexus nodes` stops marking `pcsc` with a dot once one does, and the
+  editor lists it in the reader picker.
+- **`Could not connect to a card in '…'`** — the reader is found but the slot
+  is empty or the card did not answer. Seat the card and try Run again.
+
+Other hardware nodes (`cardproxy`, `nfcgate`, the contactless ones) still need
+adapters that are not written yet, and refuse at bind naming what they want.
+`plexus nodes` marks every one of them. See [Running on hardware](hardware.md).
 
 ### `Capture … is outside the workspace`
 
