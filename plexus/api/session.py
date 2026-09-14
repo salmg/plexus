@@ -16,6 +16,7 @@ picture stays correct, and the console says how many were lost.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import threading
 from collections import deque
@@ -331,8 +332,9 @@ class Session:
 
         # Losing the socket is not losing the run, so a reconnecting editor is
         # told everything it needs to catch up rather than being asked to
-        # restart something that is still going.
-        await self._deliver({"type": "devices", "devices": []})
+        # restart something that is still going. The readers are asked for
+        # fresh here: one may have been plugged in since the page opened.
+        await self._deliver(self._devices_frame())
         # What this build cannot bind, and what each one needs. Over the
         # socket rather than over `/api/health`, which carries the same
         # answer from the same function: the editor is served from another
@@ -347,6 +349,19 @@ class Session:
             await self._deliver(
                 {"type": "node", "id": node_id, "telemetry": telemetry.to_frame()}
             )
+
+    def _devices_frame(self) -> Dict[str, Any]:
+        """
+        The `devices` frame, from whatever hardware the runtime can see now.
+
+        A `Device` is a frozen dataclass whose fields are exactly the frame the
+        editor's Inspector reads — id, kind, name, host, available, detail — so
+        `asdict` is the whole translation.
+        """
+        return {
+            "type": "devices",
+            "devices": [dataclasses.asdict(d) for d in self.engine.devices()],
+        }
 
     async def _arm(self, message: Dict[str, Any]) -> None:
         raw = message.get("graph")

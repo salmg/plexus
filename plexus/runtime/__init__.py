@@ -3,8 +3,15 @@
 from plexus.runtime.engine import (  # noqa: F401
     Engine,
     EngineError,
+    discover_devices,
     node_implementations,
     node_requirements,
 )
 
-__all__ = ["Engine", "EngineError", "node_implementations", "node_requirements"]
+__all__ = [
+    "Engine",
+    "EngineError",
+    "discover_devices",
+    "node_implementations",
+    "node_requirements",
+]

@@ -391,19 +391,23 @@ def test_a_missing_capture_refuses_at_bind_and_releases():
 
 
 def test_a_hardware_node_says_what_it_needs():
+    # cardproxy, not pcsc: pcsc is implemented now and its answer depends on
+    # whether a reader is attached to the machine running this — see
+    # test_pcsc.py. cardproxy needs a daemon this build never starts, so it is
+    # refused the same way on any machine.
     graph = graph_for(
         """
         version: 1
-        name: needs a reader
+        name: needs a proxy
         nodes:
           - id: p
             type: probe
             at: [0, 0]
             config: {depth: quick}
           - id: c
-            type: pcsc
+            type: cardproxy
             at: [400, 0]
-            config: {device: "pcsc:gemalto"}
+            config: {}
         edges:
           - from: p:card
             to: c:terminal
@@ -412,7 +416,7 @@ def test_a_hardware_node_says_what_it_needs():
     engine = Engine(sink=Sink())
     with pytest.raises(EngineError) as caught:
         engine.arm(graph)
-    assert "pyscard" in str(caught.value)
+    assert "card proxy" in str(caught.value)
 
 
 def test_the_build_knows_which_nodes_it_can_bind():
@@ -420,7 +424,10 @@ def test_the_build_knows_which_nodes_it_can_bind():
     assert ready["capture"] == "ready"
     assert ready["probe"] == "ready"
     assert ready["mutation"] == "ready"
-    assert ready["pcsc"] == "pending"
+    # cardproxy needs a daemon this build cannot start, so it is pending on any
+    # machine. pcsc is conditional now — ready with a reader attached, pending
+    # without — and is pinned in test_pcsc.py rather than here.
+    assert ready["cardproxy"] == "pending"
     assert ready["acr122u.target"] == "pending"
 
 

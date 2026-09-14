@@ -32,6 +32,18 @@ runtime = [
   "uvicorn[standard]>=0.29.0",
   "websockets>=12.0",
 ]
+# The one hardware dependency Plexus states itself. The `pcsc` node binds a
+# contact card in a local reader through atrium's local transport, which imports
+# pyscard — so the reader shows up in the editor and can be armed. Kept separate
+# from `runtime` because pyscard builds a C extension against the PC/SC headers
+# (swig plus the SDK on some platforms), and a machine that only reads and checks
+# graphs should not need a compiler. Atrium's other hardware paths pull their own
+# heavier dependencies (virtualsmartcard, the contactless stack) and stay with
+# atrium; this is the one that is pure PC/SC.
+hardware = [
+  "plexus[runtime]",
+  "pyscard>=2.0.0",
+]
 # Everything needed to run the suite in `docs/install.md`, which says
 # `pip install -e ".[dev]"` and then `pytest`. It could not: three test modules
 # drive the WebSocket server and import fastapi, and starlette's TestClient
