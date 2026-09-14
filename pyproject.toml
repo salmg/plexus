@@ -105,3 +105,12 @@ testpaths = ["tests"]
 filterwarnings = [
   "error::pytest.PytestUnhandledThreadExceptionWarning",
 ]
+# A hung test is worse than a failing one: it says nothing and it says it for
+# hours. The suite drives a relay thread, a WebSocket and an asyncio loop, so a
+# deadlock is a real possibility — and one turned up the first time these tests
+# ran on 3.12, where the whole job simply stopped.
+#
+# pytest's own faulthandler dumps every thread's stack after this many seconds
+# and aborts, so the log says *where* rather than just eventually timing out.
+# Well above the whole suite's runtime, which is about eight seconds.
+faulthandler_timeout = 120

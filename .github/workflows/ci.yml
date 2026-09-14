@@ -32,6 +32,9 @@ jobs:
   python:
     name: python ${{ matrix.python }}
     runs-on: ubuntu-latest
+    # A backstop under the faulthandler dump in pyproject.toml. Without either,
+    # the 3.12 job that hung sat there until GitHub's six-hour default.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
