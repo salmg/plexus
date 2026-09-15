@@ -828,3 +828,10 @@ a.topbar__brand:hover small {
     height: 38px;
   }
 }
+
+/* A ghost button that is currently doing something — the focus toggle, while
+   the panels are hidden. */
+.btn.is-on {
+  color: var(--accent);
+  background: var(--accent-wash);
+}

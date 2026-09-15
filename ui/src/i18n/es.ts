@@ -44,6 +44,8 @@ const esChrome: Record<MessageKey, string> = {
   "topbar.inspector": "Inspector",
   "topbar.palette": "Nodos",
   "topbar.more": "Más controles",
+  "topbar.focus.on": "Ocultar los paneles y trabajar en el lienzo",
+  "topbar.focus.off": "Traer los paneles de vuelta",
   "topbar.run": "Ejecutar",
   "topbar.stop": "Detener",
   "topbar.console.title": "Mostrar u ocultar la consola",
@@ -75,9 +77,11 @@ const esChrome: Record<MessageKey, string> = {
   "palette.class.transform": "Transformaciones",
   "palette.class.card": "Lado de la tarjeta",
   "palette.class.host": "Capa de host",
-  "legend.cardPort": "puerto de tarjeta — pide una tarjeta",
+  "port.role.requester": "pide",
+  "port.role.responder": "responde",
+  "legend.cardPort": "pide — quiere una tarjeta",
   "legend.cardPort.title": "Pide: necesita una tarjeta al otro extremo",
-  "legend.terminalPort": "puerto de terminal — es una tarjeta",
+  "legend.terminalPort": "responde — es una tarjeta",
   "legend.terminalPort.title": "Responde: se comporta como lo haría una tarjeta",
 
   // ── Lienzo ───────────────────────────────────────────────────────────
@@ -92,6 +96,8 @@ const esChrome: Record<MessageKey, string> = {
   "canvas.minimap.expand": "Expandir la vista general",
   "canvas.minimap.hide": "Ocultar la vista general",
   "canvas.minimap.show": "Vista general",
+  "edge.remove": "Quitar este cable",
+  "port.add": "Añadir un nodo en el puerto {port}",
 
   "menu.configure": "Configurar",
   "menu.duplicate": "Duplicar",

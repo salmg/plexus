@@ -18,11 +18,12 @@ import {
   Controls,
   MiniMap,
   Panel,
+  MarkerType,
   ReactFlow,
   SelectionMode,
   useReactFlow,
 } from "@xyflow/react";
-import type { Connection, Edge, Node, NodeChange } from "@xyflow/react";
+import type { Connection, Edge, EdgeChange, Node, NodeChange } from "@xyflow/react";
 
 import { CLASS_ORDER, NODE_TYPES, nodeType } from "../catalogue";
 import { Icon } from "../catalogue/icons";
@@ -36,6 +37,7 @@ import { remember, remembered } from "../store/remember";
 import { useRuntime } from "../store/useRuntime";
 import { ContextMenu } from "./ContextMenu";
 import type { MenuItem, MenuState } from "./ContextMenu";
+import { PlexusEdgeView } from "./PlexusEdge";
 import { usePlacement } from "./placement";
 import type { DropTarget } from "./placement";
 import { NODE_HEIGHT, NODE_WIDTH, PlexusNodeView } from "./PlexusNode";
@@ -47,6 +49,7 @@ export const PALETTE_DRAG_TYPE = "application/x-plexus-node";
 const MINIMAP_KEY = "plexus.minimap";
 
 const nodeTypes = { plexus: PlexusNodeView };
+const edgeTypes = { plexus: PlexusEdgeView };
 
 /**
  * A minimap block's class, so CSS can colour it.
@@ -172,6 +175,19 @@ export function Canvas({ problems }: CanvasProps) {
   }, [minimap, showBar, hideBar]);
 
   /**
+   * Which edges are selected.
+   *
+   * Kept here because the edges handed to React Flow are derived from the
+   * store, which has no notion of a selected edge — and React Flow reads
+   * selection off the array it is given. Without this the `selected` flag
+   * was never set, so Delete had no edge to act on.
+   */
+  const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
+
+  /** The open menu — a right-click, a long-press, or a node's `+`. */
+  const [menu, setMenu] = useState<MenuState | null>(null);
+
+  /**
    * A finger, rather than a mouse.
    *
    * It decides two things the canvas cannot get right otherwise. Select mode
@@ -267,10 +283,24 @@ export function Canvas({ problems }: CanvasProps) {
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
         selected: selection.includes(n.id),
-        data: { nodeId: n.id },
+        // Which ports have nothing on them, so the node can offer a `+` on
+        // exactly those. Computed here because this is where the edges are.
+        data: {
+          nodeId: n.id,
+          freePorts: (nodeType(n.type)?.ports ?? [])
+            .filter(
+              (port) =>
+                !graph.edges.some(
+                  (e) =>
+                    (e.from.node === n.id && e.from.port === port.id) ||
+                    (e.to.node === n.id && e.to.port === port.id),
+                ),
+            )
+            .map((port) => port.id),
+        },
         className: problemByNode.get(n.id)?.level === "error" ? "has-error" : undefined,
       })),
-    [graph.nodes, selection, problemByNode],
+    [graph.nodes, graph.edges, selection, problemByNode],
   );
 
   const rfEdges = useMemo<Edge[]>(
@@ -285,21 +315,42 @@ export function Canvas({ problems }: CanvasProps) {
           target: e.to.node,
           targetHandle: e.to.port,
           animated: running && !!telemetry,
+          selected: selectedEdges.has(e.id),
+          // Which way a *command* travels. The response comes back along the
+          // same wire, so one arrow is half the story — but the half that was
+          // missing, and left-to-right was something you had to assume.
+          //
+          // A CSS variable rather than a colour: React Flow puts this in an
+          // inline style on the marker, so `var()` resolves and the arrowhead
+          // follows the theme and the wire's own state.
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 16,
+            height: 16,
+            color: oob
+              ? "var(--edge-oob)"
+              : running && telemetry
+                ? "var(--edge-live)"
+                : "var(--edge)",
+          },
           className: oob ? "pedge pedge--oob" : "pedge",
-          label: telemetry
-            ? tn("canvas.apdu", telemetry.apdus, {
-                count: telemetry.apdus.toLocaleString(),
-              })
-            : undefined,
-          labelBgPadding: [5, 2] as [number, number],
-          labelBgBorderRadius: 3,
+          // The count rides in `data` rather than `label`: the edge draws its
+          // own label now, beside the button that removes it.
+          data: {
+            countLabel: telemetry
+              ? tn("canvas.apdu", telemetry.apdus, {
+                  count: telemetry.apdus.toLocaleString(),
+                })
+              : undefined,
+            oob,
+          },
         };
       }),
     // `tn` is in here because it is what reads the locale, and nothing else in
     // this list changes when the language does. docs/languages.md warns about
     // exactly this, and then this memo did it: every edge kept its English
     // count until something else happened to invalidate the memo.
-    [graph.edges, edgeTelemetry, running, tn],
+    [graph.edges, edgeTelemetry, running, selectedEdges, tn],
   );
 
   const refuse = useCallback((reason: string) => {
@@ -364,6 +415,30 @@ export function Canvas({ problems }: CanvasProps) {
   );
 
   /**
+   * Edge selection, which the canvas never applied.
+   *
+   * Without this React Flow's edge changes went nowhere, so an edge could not
+   * become selected — and Delete, which acts on the selection, always took a
+   * node instead. The only way to remove a wire was to delete a node on the end
+   * of it. Removals are left to `onEdgesDelete`, which already tells the store;
+   * applying them here as well would disconnect each edge twice.
+   */
+  const onEdgesChange = useCallback((changes: EdgeChange<Edge>[]) => {
+    const selects = changes.filter(
+      (c): c is Extract<EdgeChange<Edge>, { type: "select" }> => c.type === "select",
+    );
+    if (selects.length === 0) return;
+    setSelectedEdges((current) => {
+      const next = new Set(current);
+      for (const change of selects) {
+        if (change.selected) next.add(change.id);
+        else next.delete(change.id);
+      }
+      return next;
+    });
+  }, []);
+
+  /**
    * Drop a node onto the canvas, centred on where it was aimed.
    *
    * The one placement path — the palette's click, its desktop drag and its
@@ -396,6 +471,60 @@ export function Canvas({ problems }: CanvasProps) {
     [addNode, screenToFlowPosition],
   );
 
+  /**
+   * The `+` on a free port: offer what could answer it, then wire it up.
+   *
+   * "Could answer" is the edge rule rather than a list — same channel, opposite
+   * role — so a type that becomes connectable by gaining a port becomes
+   * offered here without anything being added to a table. The new node lands
+   * clear of the one it was asked from, on the side the conversation travels.
+   */
+  const quickAdd = useCallback(
+    (from: { node: string; port: string; at: { x: number; y: number } }) => {
+      const source = useGraph.getState().graph.nodes.find((n) => n.id === from.node);
+      const port = source && nodeType(source.type)?.ports.find((p) => p.id === from.port);
+      if (!source || !port) return;
+
+      const candidates = NODE_TYPES.flatMap((type) => {
+        const match = type.ports.find(
+          (other) => other.channel === port.channel && other.role !== port.role,
+        );
+        return match ? [{ type, port: match }] : [];
+      });
+
+      const items: MenuItem[] = CLASS_ORDER.flatMap((cls) => {
+        const inClass = candidates.filter((c) => c.type.nodeClass === cls);
+        if (inClass.length === 0) return [];
+        return [
+          { key: `h-${cls}`, label: classLabel(cls), disabled: true },
+          ...inClass.map(({ type, port: target }) => ({
+            key: `${cls}-${type.key}`,
+            label: nodeTitle(type),
+            onSelect: () => {
+              // Placed a card's width clear of the source, on the side the
+              // conversation travels: a requester asks rightward.
+              const beside = {
+                x: source.position.x + (port.role === "requester" ? NODE_WIDTH + 90 : -(NODE_WIDTH + 90)),
+                y: source.position.y,
+              };
+              const made = addNode(type.key, beside);
+              const ends =
+                port.role === "requester"
+                  ? [{ node: from.node, port: from.port }, { node: made, port: target.id }]
+                  : [{ node: made, port: target.id }, { node: from.node, port: from.port }];
+              const verdict = canConnect(useGraph.getState().graph, ends[0], ends[1]);
+              if (verdict.ok) connect(ends[0], ends[1]);
+              else refuse(verdict.reason ?? "");
+            },
+          })),
+        ];
+      });
+
+      setMenu({ x: from.at.x, y: from.at.y, items });
+    },
+    [addNode, connect, refuse],
+  );
+
   const canvasRect = useCallback(
     () => wrapper.current?.getBoundingClientRect() ?? null,
     [],
@@ -403,9 +532,9 @@ export function Canvas({ problems }: CanvasProps) {
 
   // Hand the placement path to the palette, which sits outside this provider.
   useEffect(() => {
-    usePlacement.getState().register(place, canvasRect);
-    return () => usePlacement.getState().register(null, null);
-  }, [place, canvasRect]);
+    usePlacement.getState().register(place, canvasRect, quickAdd);
+    return () => usePlacement.getState().register(null, null, null);
+  }, [place, canvasRect, quickAdd]);
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
@@ -425,10 +554,9 @@ export function Canvas({ problems }: CanvasProps) {
   // ── The right-click menu ──────────────────────────────────────────────────
   //
   // Opened from React Flow's own context-menu callbacks, which fire on a
-  // right-click and on a touch long-press alike. The canvas decides what each
-  // menu says; `ContextMenu` only lays it out.
+  // right-click and on a touch long-press alike, and from a node's `+`. The
+  // canvas decides what each menu says; `ContextMenu` only lays it out.
 
-  const [menu, setMenu] = useState<MenuState | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
 
   /** Bring the inspector into view for a node, wherever it is laid out. */
@@ -546,7 +674,9 @@ export function Canvas({ problems }: CanvasProps) {
         nodes={rfNodes}
         edges={rfEdges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         onEdgesDelete={onEdgesDelete}
         onConnect={onConnect}
         isValidConnection={isValidConnection}
@@ -556,7 +686,10 @@ export function Canvas({ problems }: CanvasProps) {
             (window as unknown as Record<string, unknown>).__rf = instance;
           }
         }}
-        onPaneClick={() => select(null)}
+        onPaneClick={() => {
+          select(null);
+          setSelectedEdges(new Set());
+        }}
         onNodeContextMenu={onNodeContextMenu}
         onSelectionContextMenu={onSelectionContextMenu}
         onPaneContextMenu={onPaneContextMenu}
@@ -565,7 +698,7 @@ export function Canvas({ problems }: CanvasProps) {
         // is still credited by name in the README's stack list; this only
         // removes the link that sat over the graph.
         proOptions={{ hideAttribution: true }}
-        defaultEdgeOptions={{ type: "default" }}
+        defaultEdgeOptions={{ type: "plexus" }}
         minZoom={0.25}
         maxZoom={2}
         // Stated rather than left to the defaults, because they are the whole

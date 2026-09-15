@@ -132,6 +132,10 @@ export interface LayoutState {
    * where it is a bottom sheet with its own height).
    */
   consoleHeight: number | null;
+  /** Everything hidden at once, and what to put back when it is not. */
+  focus: boolean;
+  /** Hide all three, or restore whatever was open before. */
+  toggleFocus: () => void;
 
   toggle: (panel: Panel) => void;
   close: (panel: Panel) => void;
@@ -139,6 +143,9 @@ export interface LayoutState {
   setConsoleHeight: (px: number) => void;
   measure: () => void;
 }
+
+/** What was open before focus mode hid it. Not state: nothing renders it. */
+let _before: { palette: boolean; inspector: boolean; console: boolean } | null = null;
 
 export const useLayout = create<LayoutState>((set, get) => ({
   // Read where the store is created, not in an effect afterwards — an effect
@@ -153,6 +160,21 @@ export const useLayout = create<LayoutState>((set, get) => ({
   narrow: under(NARROW_WIDTH),
   pinned: false,
   consoleHeight: savedConsoleHeight(),
+  focus: false,
+
+  toggleFocus: () => {
+    const { focus, palette, inspector, console: consoleOpen } = get();
+    if (!focus) {
+      // Remembered rather than re-derived: coming back should give you the
+      // panels you had, not the ones a width rule would have chosen.
+      _before = { palette, inspector, console: consoleOpen };
+      set({ focus: true, palette: false, inspector: false, console: false });
+      return;
+    }
+    const back = _before ?? { palette: true, inspector: false, console: true };
+    _before = null;
+    set({ focus: false, ...back });
+  },
 
   toggle: (panel) => {
     const open = !get()[panel];
@@ -163,7 +185,10 @@ export const useLayout = create<LayoutState>((set, get) => ({
     if (open && get().compact) {
       set({ palette: false, inspector: false, console: false });
     }
-    set(panel === "inspector" ? { inspector: open, pinned: true } : { [panel]: open });
+    set({
+      focus: false,
+      ...(panel === "inspector" ? { inspector: open, pinned: true } : { [panel]: open }),
+    });
   },
 
   close: (panel) => {
