@@ -494,7 +494,11 @@ export function Canvas({ problems }: CanvasProps) {
         onNodeContextMenu={onNodeContextMenu}
         onSelectionContextMenu={onSelectionContextMenu}
         onPaneContextMenu={onPaneContextMenu}
-        proOptions={{ hideAttribution: false }}
+        // React Flow is MIT-licensed and this flag is its own supported way to
+        // hide the badge, so nothing is being defeated by using it. The library
+        // is still credited by name in the README's stack list; this only
+        // removes the link that sat over the graph.
+        proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{ type: "default" }}
         minZoom={0.25}
         maxZoom={2}
