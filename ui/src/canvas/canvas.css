@@ -145,6 +145,18 @@
  */
 .react-flow__panel.minimap-bar--float {
   inset: auto 15px calc(15px + 150px + 5px) auto;
+  /* Clutter over the graph until the pointer is on the overview, so the map is
+     clean to read. `is-visible` (hover, plus always on a touch screen with no
+     hover) and keyboard focus bring it back. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.react-flow__panel.minimap-bar--float.is-visible,
+.react-flow__panel.minimap-bar--float:focus-within {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .react-flow__panel.minimap-bar--dock {

@@ -9,7 +9,7 @@ import { create } from "zustand";
 
 import { defaultConfig, requireNodeType } from "../catalogue";
 import { emptyGraph } from "../graph/types";
-import { remembered, THEME_KEY } from "./remember";
+import { remember, remembered, THEME_KEY } from "./remember";
 import type {
   Device,
   NodePosition,
@@ -148,6 +148,43 @@ function nextId(graph: PlexusGraph, typeKey: string): string {
   let n = 1;
   while (graph.nodes.some((node) => node.id === `${stem}-${n}`)) n += 1;
   return `${stem}-${n}`;
+}
+
+/** Where the working graph is remembered between visits. */
+const GRAPH_KEY = "plexus.graph";
+
+/**
+ * The graph left open at the end of the last visit, or null for a clean start.
+ *
+ * A shape check, not a schema validation: enough to be sure this is a graph and
+ * not some other JSON that happens to share the key, so a corrupt or foreign
+ * value falls back to the default rather than rendering a broken canvas. An
+ * empty graph is a real answer — it is what "New" leaves behind — so it comes
+ * back as itself, not as a reason to reopen the example.
+ */
+export function savedGraph(): PlexusGraph | null {
+  const raw = remembered(GRAPH_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      parsed.version === 1 &&
+      Array.isArray(parsed.nodes) &&
+      Array.isArray(parsed.edges)
+    ) {
+      return {
+        version: 1,
+        name: typeof parsed.name === "string" ? parsed.name : "untitled",
+        hosts: Array.isArray(parsed.hosts) ? parsed.hosts : [],
+        nodes: parsed.nodes,
+        edges: parsed.edges,
+      };
+    }
+  } catch {
+    // A value that will not parse is one we cannot use; start clean.
+  }
+  return null;
 }
 
 export const useGraph = create<GraphState>((set, get) => {
@@ -418,4 +455,19 @@ export const useGraph = create<GraphState>((set, get) => {
 
     markClean: () => set({ dirty: false }),
   };
+});
+
+/*
+ * Remember the working graph so a reload reopens it, not the example.
+ *
+ * A subscription rather than a write in every reducer: the graph is edited from
+ * a dozen actions and one place that watches the result cannot be forgotten by
+ * the next one added. Only writes when the graph reference actually changes, so
+ * selecting a node or opening a panel does not touch storage. `remember` is
+ * already safe when storage is not, and stringify cannot fail on a plain graph.
+ */
+useGraph.subscribe((state, previous) => {
+  if (state.graph !== previous.graph) {
+    remember(GRAPH_KEY, JSON.stringify(state.graph));
+  }
 });

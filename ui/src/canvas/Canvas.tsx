@@ -129,6 +129,49 @@ export function Canvas({ problems }: CanvasProps) {
   }, []);
 
   /**
+   * Whether the pointer is over the overview, which is what reveals its
+   * minimize and hide buttons — they are clutter over the graph the rest of
+   * the time. A short grace period on leave carries the pointer across the gap
+   * between the minimap and the bar above it without the bar flickering out.
+   */
+  const [mapHover, setMapHover] = useState(false);
+  const hoverTimer = useRef<number | null>(null);
+  const showBar = useCallback(() => {
+    if (hoverTimer.current !== null) {
+      clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+    setMapHover(true);
+  }, []);
+  const hideBar = useCallback(() => {
+    hoverTimer.current = window.setTimeout(() => setMapHover(false), 150);
+  }, []);
+
+  // Native listeners on the minimap and its bar, not React's onMouseEnter:
+  // React Flow's MiniMap reads only the props it names and drops the rest, so a
+  // handler passed to it never runs. mouseenter/mouseleave do not bubble, so
+  // each element is bound directly; the leave timer carries the pointer across
+  // the gap between the two without the bar flickering out.
+  useEffect(() => {
+    if (minimap !== "open") return;
+    const nodes = [
+      document.querySelector(".react-flow__minimap"),
+      document.querySelector(".minimap-bar--float"),
+    ].filter((el): el is Element => el !== null);
+    for (const el of nodes) {
+      el.addEventListener("mouseenter", showBar);
+      el.addEventListener("mouseleave", hideBar);
+    }
+    return () => {
+      for (const el of nodes) {
+        el.removeEventListener("mouseenter", showBar);
+        el.removeEventListener("mouseleave", hideBar);
+      }
+      if (hoverTimer.current !== null) clearTimeout(hoverTimer.current);
+    };
+  }, [minimap, showBar, hideBar]);
+
+  /**
    * A finger, rather than a mouse.
    *
    * It decides two things the canvas cannot get right otherwise. Select mode
@@ -560,7 +603,12 @@ export function Canvas({ problems }: CanvasProps) {
               nodeClassName={minimapClass}
               nodeStrokeWidth={0}
             />
-            <Panel position="bottom-right" className="minimap-bar minimap-bar--float">
+            <Panel
+              position="bottom-right"
+              className={`minimap-bar minimap-bar--float${
+                mapHover || coarse ? " is-visible" : ""
+              }`}
+            >
               <button
                 type="button"
                 className="minimap-bar__btn"

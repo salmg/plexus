@@ -9,7 +9,7 @@ import { Console } from "./panels/Console";
 import { Inspector } from "./panels/Inspector";
 import { Palette } from "./panels/Palette";
 import { remember, THEME_KEY } from "./store/remember";
-import { useGraph } from "./store/useGraph";
+import { savedGraph, useGraph } from "./store/useGraph";
 import { useLayout, useMeasureLayout } from "./store/useLayout";
 import { useRuntime } from "./store/useRuntime";
 import { CONTACTLESS_RELAY } from "./examples";
@@ -63,9 +63,14 @@ export default function App() {
 
   useEffect(() => {
     void init();
-    // An empty canvas teaches nothing, so open on a rig that shows what a
-    // chain looks like.  Anything the user does replaces it.
-    if (useGraph.getState().graph.nodes.length === 0) {
+    // Reopen the graph from last time if there is one. A first-ever visit has
+    // none, and an empty canvas teaches nothing, so it opens on a rig that
+    // shows what a chain looks like. Either way, anything the user does
+    // replaces it and is itself remembered — see `savedGraph` in the store.
+    const restored = savedGraph();
+    if (restored) {
+      setGraph(restored, { clean: true });
+    } else if (useGraph.getState().graph.nodes.length === 0) {
       setGraph(CONTACTLESS_RELAY, { clean: true });
     }
   }, [init, setGraph]);
