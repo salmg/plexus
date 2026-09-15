@@ -66,6 +66,10 @@ export const en = {
   "canvas.select.title": "Drag a box to select nodes. Middle or right button still pans.",
   "canvas.tool": "Mouse tool",
   "canvas.overview": "Graph overview",
+  "canvas.minimap.minimize": "Minimize the overview",
+  "canvas.minimap.expand": "Expand the overview",
+  "canvas.minimap.hide": "Hide the overview",
+  "canvas.minimap.show": "Overview",
 
   "menu.configure": "Configure",
   "menu.duplicate": "Duplicate",

@@ -25,12 +25,14 @@ import {
 import type { Connection, Edge, Node, NodeChange } from "@xyflow/react";
 
 import { CLASS_ORDER, NODE_TYPES, nodeType } from "../catalogue";
+import { Icon } from "../catalogue/icons";
 import { useT, useTn } from "../i18n";
 import { classLabel, nodeTitle } from "../i18n/catalogue";
 import { canConnect } from "../graph/validate";
 import type { Problem } from "../graph/validate";
 import { useGraph } from "../store/useGraph";
 import { useLayout } from "../store/useLayout";
+import { remember, remembered } from "../store/remember";
 import { useRuntime } from "../store/useRuntime";
 import { ContextMenu } from "./ContextMenu";
 import type { MenuItem, MenuState } from "./ContextMenu";
@@ -40,6 +42,9 @@ import { NODE_HEIGHT, NODE_WIDTH, PlexusNodeView } from "./PlexusNode";
 import type { PlexusNodeData } from "./PlexusNode";
 
 export const PALETTE_DRAG_TYPE = "application/x-plexus-node";
+
+/** Where the overview's open/mini/hidden state is remembered. */
+const MINIMAP_KEY = "plexus.minimap";
 
 const nodeTypes = { plexus: PlexusNodeView };
 
@@ -104,6 +109,24 @@ export function Canvas({ problems }: CanvasProps) {
    * does when you grab it.
    */
   const [mode, setMode] = useState<"pan" | "select">("pan");
+
+  /**
+   * The overview's three states, remembered across reloads.
+   *
+   * `open` is the full minimap; `mini` collapses it to a labelled pill that
+   * still shows and hides it; `hidden` leaves only a small button to bring it
+   * back. Minimize keeps the control on screen, hide clears the corner — the
+   * window-manager distinction, because the overview is worth reaching for
+   * again more often than it is worth banishing.
+   */
+  const [minimap, setMinimapState] = useState<"open" | "mini" | "hidden">(() => {
+    const saved = remembered(MINIMAP_KEY);
+    return saved === "mini" || saved === "hidden" ? saved : "open";
+  });
+  const setMinimap = useCallback((state: "open" | "mini" | "hidden") => {
+    remember(MINIMAP_KEY, state);
+    setMinimapState(state);
+  }, []);
 
   /**
    * A finger, rather than a mouse.
@@ -523,15 +546,79 @@ export function Canvas({ problems }: CanvasProps) {
           color="var(--canvas-grid-major)"
         />
         <Controls showInteractive={false} />
-        {/* Class-coloured, so the overview shows the shape of the chain and
-            not just four identical blocks. */}
-        <MiniMap
-          pannable
-          zoomable
-          ariaLabel={t("canvas.overview")}
-          nodeClassName={minimapClass}
-          nodeStrokeWidth={0}
-        />
+
+        {/* The overview and its controls. Class-coloured, so it shows the shape
+            of the chain and not four identical blocks. Open, minimised to a
+            labelled pill, or hidden to a single button — remembered across
+            reloads. */}
+        {minimap === "open" && (
+          <>
+            <MiniMap
+              pannable
+              zoomable
+              ariaLabel={t("canvas.overview")}
+              nodeClassName={minimapClass}
+              nodeStrokeWidth={0}
+            />
+            <Panel position="bottom-right" className="minimap-bar minimap-bar--float">
+              <button
+                type="button"
+                className="minimap-bar__btn"
+                onClick={() => setMinimap("mini")}
+                title={t("canvas.minimap.minimize")}
+                aria-label={t("canvas.minimap.minimize")}
+              >
+                <Icon name="minus" />
+              </button>
+              <button
+                type="button"
+                className="minimap-bar__btn"
+                onClick={() => setMinimap("hidden")}
+                title={t("canvas.minimap.hide")}
+                aria-label={t("canvas.minimap.hide")}
+              >
+                <Icon name="close" />
+              </button>
+            </Panel>
+          </>
+        )}
+
+        {minimap === "mini" && (
+          <Panel position="bottom-right" className="minimap-bar minimap-bar--dock">
+            <button
+              type="button"
+              className="minimap-bar__label"
+              onClick={() => setMinimap("open")}
+              title={t("canvas.minimap.expand")}
+            >
+              <Icon name="window" />
+              <span>{t("canvas.overview")}</span>
+            </button>
+            <button
+              type="button"
+              className="minimap-bar__btn"
+              onClick={() => setMinimap("hidden")}
+              title={t("canvas.minimap.hide")}
+              aria-label={t("canvas.minimap.hide")}
+            >
+              <Icon name="close" />
+            </button>
+          </Panel>
+        )}
+
+        {minimap === "hidden" && (
+          <Panel position="bottom-right" className="minimap-bar minimap-bar--dock">
+            <button
+              type="button"
+              className="minimap-bar__btn"
+              onClick={() => setMinimap("open")}
+              title={t("canvas.minimap.show")}
+              aria-label={t("canvas.minimap.show")}
+            >
+              <Icon name="window" />
+            </button>
+          </Panel>
+        )}
 
         <Panel position="top-left" className="tools">
           {/* Not offered to a finger: with no second pointer to pan with,

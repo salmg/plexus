@@ -31,6 +31,8 @@ export type IconName =
   | "clock"
   | "pause"
   | "chevron"
+  | "minus"
+  | "close"
   | "node";
 
 const PATHS: Record<IconName, ReactElement> = {
@@ -139,6 +141,18 @@ const PATHS: Record<IconName, ReactElement> = {
   chevron: (
     <>
       <path d="M6 4l4 4-4 4" />
+    </>
+  ),
+  // Minimise: a single bar, the window-manager sense of "collapse to a strip".
+  minus: (
+    <>
+      <path d="M4 8h8" />
+    </>
+  ),
+  // Close: the small × that dismisses a corner widget.
+  close: (
+    <>
+      <path d="M4 4l8 8M12 4l-8 8" />
     </>
   ),
   // The fallback, for a node type this build does not recognise.

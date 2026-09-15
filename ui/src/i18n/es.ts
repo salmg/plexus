@@ -88,6 +88,10 @@ const esChrome: Record<MessageKey, string> = {
     "Arrastra un recuadro para seleccionar nodos. El botón central o derecho sigue desplazando.",
   "canvas.tool": "Herramienta del ratón",
   "canvas.overview": "Vista general del grafo",
+  "canvas.minimap.minimize": "Minimizar la vista general",
+  "canvas.minimap.expand": "Expandir la vista general",
+  "canvas.minimap.hide": "Ocultar la vista general",
+  "canvas.minimap.show": "Vista general",
 
   "menu.configure": "Configurar",
   "menu.duplicate": "Duplicar",
