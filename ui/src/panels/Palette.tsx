@@ -19,10 +19,14 @@ import type { NodeType } from "../catalogue/types";
 import { useT } from "../i18n";
 import { classLabel, nodeSummary, nodeTitle } from "../i18n/catalogue";
 import { useGraph } from "../store/useGraph";
+import { remember, remembered } from "../store/remember";
 import { useRuntime } from "../store/useRuntime";
 import { PALETTE_DRAG_TYPE } from "../canvas/Canvas";
 import { usePlacement } from "../canvas/placement";
 import { usePaletteDrag } from "./usePaletteDrag";
+
+/** Where the collapsed groups are remembered, as a comma-joined list of classes. */
+const COLLAPSED_KEY = "plexus.palette-collapsed";
 
 export function Palette() {
   const t = useT();
@@ -34,6 +38,24 @@ export function Palette() {
   // simulator, which invents traffic for anything.
   const unavailable = useRuntime((s) => s.unavailable);
   const [query, setQuery] = useState("");
+
+  // Which groups are folded away, remembered across reloads. A folded group
+  // still shows its matches while a filter is active — hiding a node the user
+  // is searching for would be the one thing a filter must never do.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    const raw = remembered(COLLAPSED_KEY);
+    return new Set(raw ? raw.split(",").filter(Boolean) : []);
+  });
+  const toggleGroup = (cls: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(cls)) next.delete(cls);
+      else next.add(cls);
+      remember(COLLAPSED_KEY, [...next].join(","));
+      return next;
+    });
+  };
+  const searching = query.trim() !== "";
 
   const groups = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -78,13 +100,29 @@ export function Palette() {
       </div>
 
       <div className="rail__scroll">
-        {groups.map((group) => (
+        {groups.map((group) => {
+          const isCollapsed = collapsed.has(group.cls) && !searching;
+          return (
           <section
             key={group.cls}
-            className={`palette__group palette__group--${group.cls}`}
+            className={`palette__group palette__group--${group.cls}${
+              isCollapsed ? " palette__group--collapsed" : ""
+            }`}
           >
-            <h2 className="panel-section__title">{group.label}</h2>
-            {group.items.map((type) => {
+            <h2 className="panel-section__title">
+              <button
+                type="button"
+                className="palette__group-toggle"
+                aria-expanded={!isCollapsed}
+                onClick={() => toggleGroup(group.cls)}
+              >
+                <Icon name="chevron" className="palette__group-chevron" />
+                <span className="palette__group-label">{group.label}</span>
+                <span className="palette__group-count">{group.items.length}</span>
+              </button>
+            </h2>
+            {!isCollapsed &&
+              group.items.map((type) => {
               // Marked, not disabled. You can still draw a rig for hardware
               // you have not plugged in yet, or for a machine that is not
               // this one — the file is the document, and it outlives the
@@ -136,7 +174,8 @@ export function Palette() {
               );
             })}
           </section>
-        ))}
+          );
+        })}
 
         {groups.length === 0 && (
           <p className="empty">{t("palette.empty", { query })}</p>

@@ -116,6 +116,97 @@
   fill: var(--class-host);
 }
 
+/* ── Overview (minimap) controls ─────────────────────────────────────────
+ *
+ * Three states: open (the minimap plus a floating minimise/hide bar above its
+ * top edge), minimised (a labelled pill that reopens or hides it), and hidden
+ * (a single button that brings it back). Canvas.tsx holds the state; these
+ * place the controls. The class-and-class selectors match React Flow's own
+ * panel specificity, and this file loads after its stylesheet, so they win.
+ */
+.react-flow__panel.minimap-bar {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+}
+
+/*
+ * The open state's bar floats just above the minimap's top-right corner. The
+ * minimap is a bottom-right panel that React Flow gives a 15px margin and a
+ * 150px height, so the bar clears it by sitting that far up, right edges
+ * aligned. If React Flow's default minimap size changes, this offset is the
+ * one number to follow it.
+ */
+.react-flow__panel.minimap-bar--float {
+  inset: auto 15px calc(15px + 150px + 5px) auto;
+  /* Clutter over the graph until the pointer is on the overview, so the map is
+     clean to read. `is-visible` (hover, plus always on a touch screen with no
+     hover) and keyboard focus bring it back. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.react-flow__panel.minimap-bar--float.is-visible,
+.react-flow__panel.minimap-bar--float:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.react-flow__panel.minimap-bar--dock {
+  inset: auto 15px 15px auto;
+  padding: 2px 3px 2px 5px;
+  gap: 4px;
+}
+
+.minimap-bar__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.minimap-bar__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.minimap-bar__btn:hover,
+.minimap-bar__label:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+/* Below the width where the minimap itself is hidden, its controls go too. */
+@media (max-width: 900px) {
+  .react-flow__panel.minimap-bar {
+    display: none;
+  }
+}
+
 /* ── Node card ────────────────────────────────────────────────────────── */
 
 /* Size is declared to React Flow too — see NODE_WIDTH / NODE_HEIGHT. */
