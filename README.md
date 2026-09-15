@@ -30,19 +30,19 @@ the shape of. Plexus makes the rig the document.
 This is the one idea everything else follows from, and it is where a
 node-graph tool for this domain usually goes wrong.
 
-In n8n — or any dataflow editor — an edge is a one-way push and an execution
+In n8n, or any dataflow editor, an edge is a one-way push and an execution
 runs to completion. Neither is true here. A command APDU travels one way, a
 response comes back along the same wire, and the graph stays up for thousands
 of round trips until you stop it. So ports do not hold directions, they hold
 roles:
 
-- **requester** — I ask. Something on the other end has to answer.
-- **responder** — I answer. I present myself as the thing being asked.
+- **requester**: I ask. Something on the other end has to answer.
+- **responder**: I answer. I present myself as the thing being asked.
 
 On the `apdu` channel those read as the **card port** (on the right: it wants a
 card to talk to) and the **terminal port** (on the left: it behaves as a card
 would). An edge is legal when two ports share a channel and hold opposite
-roles, and it is always drawn requester → responder — the direction a command
+roles, and it is always drawn requester → responder, the direction a command
 travels.
 
 ```
@@ -69,14 +69,14 @@ the second node, with the reason on screen.
 - **The chain fits in a tap.** Each node declares what it costs; a contactless
   chain that sums past what a kernel will tolerate says so before you plug
   anything in. That threshold is a rule of thumb, not a figure from a
-  specification, so it warns rather than refuses — see `TAP_BUDGET_WARN_MS`,
+  specification, so it warns rather than refuses. See `TAP_BUDGET_WARN_MS`,
   which carries the reason there is one of it and not two.
 
 A graph that fails these will not arm: Run greys out, the count in the top bar
 turns red, and every check names the node it is about rather than describing a
 category of problem.
 
-![A graph that will not arm — three errors and two warnings, each naming its node](docs/images/05-checks.png)
+![A graph that will not arm: three errors and two warnings, each naming its node](docs/images/05-checks.png)
 
 ## A graph is untrusted input
 
@@ -87,7 +87,7 @@ following was measured open before it was closed, and each has a test in
 
 **No page you visit can drive the runtime.** A browser does *not* apply the
 same-origin policy to WebSockets. Any site could open `ws://127.0.0.1:8900/ws`,
-and the Host header on that handshake is honestly `127.0.0.1:8900` — so
+and the Host header on that handshake is honestly `127.0.0.1:8900`, so
 checking Host is not enough. A connection claiming
 `Origin: https://evil.example.com` was accepted, and could have armed a card
 relay. The Origin is now checked against an allow-list: loopback origins, plus
@@ -95,13 +95,13 @@ anything named in `PLEXUS_ALLOWED_ORIGINS`. A *missing* Origin is allowed,
 because that is a native client, and this attack needs a browser.
 
 **No graph can reach outside its workspace.** A trace node's `path` used to be
-an arbitrary file write — appended JSON, anywhere the process could reach. Both
+an arbitrary file write: appended JSON, anywhere the process could reach. Both
 reads and writes now resolve inside a workspace, which is the directory the
 runtime was started in, and anything escaping it is refused by name. Widen it
 deliberately with `PLEXUS_WORKSPACE`; a graph cannot widen it for you.
 
 **Nothing runs that a graph brings with it.** A playbook is YAML that reaches
-atrium's loader, which uses `yaml.safe_load` — a tag asking for an object is an
+atrium's loader, which uses `yaml.safe_load`: a tag asking for an object is an
 error, not a call. Plexus parses the playbook first anyway, because atrium
 *logs* a bad document and carries on with defaults, and a mutation node that
 binds while silently doing nothing is worse than one that refuses.
@@ -111,13 +111,13 @@ APDU larger than a card could read is refused before it becomes bytes.
 
 **Opening a graph is not agreeing to it.** Open shows what the graph will
 claim, dial and write, and loads nothing until you say so. That is an
-informed-consent step, not a boundary — the boundary is the workspace and the
+informed-consent step, not a boundary. The boundary is the workspace and the
 checks, which do not depend on anyone reading a dialog.
 
-![The import review — what the graph will claim, dial, and read or write, before anything is loaded](docs/images/06-import-review.png)
+![The import review: what the graph will claim, dial, and read or write, before anything is loaded](docs/images/06-import-review.png)
 
 Still true, and deliberate: **there is no authentication on loopback.** Same
-position atrium takes — the operating system already decides who can open a
+position atrium takes: the operating system already decides who can open a
 local socket. Binding anywhere else refuses to start without
 `PLEXUS_API_TOKEN`.
 
@@ -125,12 +125,12 @@ local socket. Binding anywhere else refuses to start without
 
 Pick a language in the top bar; it is remembered, and a first visit follows the
 browser's own preference. Everything the editor writes moves with it, including
-the parts it generates rather than stores — the checks, the reason a wire was
+the parts it generates rather than stores: the checks, the reason a wire was
 refused, the node titles and the port labels on the cards.
 
 The runtime's own words stay in English: they arrive already written, over the
 socket, and translating half a trace would be worse than leaving it whole.
-Adding a third language is one file and no framework — see
+Adding a third language is one file and no framework. See
 [docs/languages.md](docs/languages.md).
 
 ![The editor in Spanish, including the checks and the port labels it generates rather than stores](docs/images/03-espanol.png)
@@ -139,8 +139,8 @@ Adding a third language is one file and no framework — see
 
 Dark mode is not a colour scheme, it is the working mode: the canvas dims and a
 real terminal sits under it. Its palette comes from
-[academy.salmg.net](https://academy.salmg.net)'s own — a deep blue-slate ground
-rather than black — so the two read as one operation. During a relay the useful
+[academy.salmg.net](https://academy.salmg.net)'s own, a deep blue-slate ground
+rather than black, so the two read as one operation. During a relay the useful
 thing is rarely reading the trace; it is reaching into the running process.
 
 ```
@@ -155,7 +155,7 @@ plexus> pause
 The same console works against the simulator and against a card, because both
 answer the same protocol.
 
-![A running graph — the live APDU trace beneath the canvas, Stop armed in the top bar](docs/images/08-running.png)
+![A running graph: the live APDU trace beneath the canvas, Stop armed in the top bar](docs/images/08-running.png)
 
 ---
 
@@ -168,8 +168,8 @@ pip install -e ".[runtime]"
 plexus up
 ```
 
-That builds the editor the first time — a minute, and the only step that needs
-the network — then serves the editor and the runtime together on
+That builds the editor the first time (a minute, and the only step that needs
+the network), then serves the editor and the runtime together on
 http://127.0.0.1:8900/ and opens a browser there. An example rig is loaded so
 there is something to read.
 
@@ -184,11 +184,11 @@ plexus> tx 00B2010C00
 ```
 
 It binds loopback. Binding anywhere else refuses to start without
-`PLEXUS_API_TOKEN` set — an open control plane for a card relay is not
+`PLEXUS_API_TOKEN` set. An open control plane for a card relay is not
 something to leave to a warning nobody reads.
 
 The editor also runs alone, on a simulated runtime with no Python and no
-atrium — `cd ui && npm run dev`, and `plexus serve` when you want a real
+atrium: `cd ui && npm run dev`, and `plexus serve` when you want a real
 runtime behind it. See [Install](docs/install.md).
 
 The graph model and the checks also run headless, with only PyYAML installed:
@@ -213,7 +213,7 @@ contactless relay to a phone
   42 ms each way, 84 ms out and back.
 ```
 
-And `run` arms the graph for real. One rig needs nothing at all — a fingerprint
+And `run` arms the graph for real. One rig needs nothing at all: a fingerprint
 probe asking, a recorded capture answering, a mutation node between them:
 
 ```bash
@@ -236,11 +236,11 @@ info  Armed 3 nodes: probe-1 -> mutation-1 -> capture-1
 ```
 
 The last two lines are the point: what the card said, and what the terminal was
-told. `plexus nodes` marks which node types this build can actually bind — the
+told. `plexus nodes` marks which node types this build can actually bind; the
 rest name the hardware or daemon they need and refuse at bind time.
 
 The same rig in the editor, where the checks say up front what the CLI can only
-prove by running it — *nothing to fix, this graph is ready to arm*:
+prove by running it. *Nothing to fix, this graph is ready to arm*:
 
 ![A rig that will run with no hardware in it](docs/images/07-runnable-rig.png)
 
@@ -256,14 +256,14 @@ pytest
 ```
 ui/                     the editor (React, @xyflow/react, xterm.js)
   src/graph/            model, validation, YAML
-  src/catalogue/        node types — data, never code
+  src/catalogue/        node types: data, never code
   src/runtime/          mock runtime, WebSocket runtime
   src/canvas/           React Flow canvas and the node card
   src/panels/           palette, inspector, console
 plexus/                 the runtime (Python)
   graph.py              the model again, and the same checks
   catalogue.py          reads the catalogue below, wherever it is installed
-  schema/catalogue.json generated — the one description of every node type
+  schema/catalogue.json generated: the one description of every node type
   runtime/              engine, the chain, the frames it emits
   nodes/                card / terminal / transform implementations
   adapters/             the only place that imports atrium
@@ -281,7 +281,7 @@ A node type's ports, config fields and latency cost are described once, in
 `ui/src/catalogue/index.ts`, and exported to `plexus/schema/catalogue.json` with
 `npm run export:catalogue`. The Python side loads that file. Writing the table
 twice would guarantee drift, and the first symptom would be a graph that draws
-in the editor and refuses to run — or worse, runs differently.
+in the editor and refuses to run, or worse, runs differently.
 
 ### Atrium is a submodule, not a fork
 
@@ -295,7 +295,7 @@ git submodule update --remote vendor/atrium
 Every node in the catalogue maps onto something that already exists there: a
 `CardTransport` implementation, a `SmartcardOS`, or the `on_command` /
 `on_response` pair the mutation engine exposes. A mutation node's config *is*
-an atrium playbook — the files in `vendor/atrium/playbooks/` paste in unchanged.
+an atrium playbook: the files in `vendor/atrium/playbooks/` paste in unchanged.
 
 ![A mutation node selected, with its atrium playbook inline in the inspector](docs/images/04-inspector.png)
 
@@ -305,12 +305,12 @@ Being straight about the line:
 
 - **The hardware nodes.** The engine binds, drives, rewrites, reports and
   releases. The cards it binds today are a recorded capture and a contact card
-  in a **PC/SC reader** (`pip install -e ".[hardware]"`, then plug one in — it
+  in a **PC/SC reader** (`pip install -e ".[hardware]"`, then plug one in; it
   is discovered live and appears in the editor's reader picker); the only
   terminal is the fingerprint probe. The ACR122U in either mode, NFCGate, the
   card proxy, SimTrace2 and vpcd all resolve, and all refuse at bind time
   naming what they need. They are adapter work against seams that already exist
-  in atrium — PC/SC is the worked example of that work — and they need the rig
+  in atrium (PC/SC is the worked example of that work), and they need the rig
   to be worth writing.
 - **Host-layer nodes.** ISO 8583 is a second channel in the model (`iso8583`)
   with no nodes on it yet. The interesting one is a DE55 bridge, where the two
@@ -320,7 +320,7 @@ Being straight about the line:
 
 Atrium splits cleanly in half, and only one half needs hardware.
 `mutation_engine`, `transport.recorded`, `emv_logger` and `card_fingerprint`
-are pure standard library — they import with no reader attached and no pyscard
+are pure standard library: they import with no reader attached and no pyscard
 installed. So a graph made of a capture and some transforms is a complete,
 honest relay that runs anywhere, and that is what the test suite drives: bind,
 drive, rewrite, report, release, through atrium's real mutation engine.
@@ -335,14 +335,14 @@ through `plexus/adapters/`, and nothing else in the codebase imports atrium.
 
 The editor and the runtime apply the same rules to the same graph, in different
 languages. `tests/test_graph.py` pins the places where that agreement is
-observable — the example rig's 84 ms round trip, its two warnings, the chain
-order — so a change to one side that quietly disagrees with the other fails a
+observable: the example rig's 84 ms round trip, its two warnings, the chain
+order, so a change to one side that quietly disagrees with the other fails a
 test rather than surfacing as a graph that draws fine and runs differently.
 
 One case is worth keeping: `test_the_thresholds_are_reachable_by_a_graph_someone_could_draw`
 is a regression on a check that did nothing. The contactless timing thresholds
 were first compared against the one-way sum at 120/300 ms, while the dearest
-chain the catalogue allows is 43 ms one way — so the warning could never fire
+chain the catalogue allows is 43 ms one way, so the warning could never fire
 and the error needed 79 stacked mutation nodes. They now measure the round trip
 against 60/150 ms, and the test fails if the catalogue ever drifts back out of
 their reach.
