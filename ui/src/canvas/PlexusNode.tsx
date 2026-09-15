@@ -14,13 +14,16 @@ import type { NodeProps } from "@xyflow/react";
 import { nodeType } from "../catalogue";
 import { Icon } from "../catalogue/icons";
 import { tn, useT } from "../i18n";
-import { nodeTitle, portLabel } from "../i18n/catalogue";
+import { nodeTitle, portLabel, portRole } from "../i18n/catalogue";
 import type { NodeTelemetry, PortSpec } from "../graph/types";
 import { useGraph } from "../store/useGraph";
 import { useRuntime } from "../store/useRuntime";
+import { usePlacement } from "./placement";
 
 export interface PlexusNodeData extends Record<string, unknown> {
   nodeId: string;
+  /** Ports with no edge on them — the ones that get a `+`. */
+  freePorts?: string[];
 }
 
 /**
@@ -52,8 +55,9 @@ const STATUS_KEY: Record<NodeTelemetry["status"], string> = {
 };
 
 export function PlexusNodeView({ data, selected }: NodeProps) {
-  const { nodeId } = data as PlexusNodeData;
+  const { nodeId, freePorts } = data as PlexusNodeData;
   const t = useT();
+  const free = new Set(freePorts ?? []);
 
   const node = useGraph((s) => s.graph.nodes.find((n) => n.id === nodeId));
   const devices = useGraph((s) => s.devices);
@@ -126,27 +130,54 @@ export function PlexusNodeView({ data, selected }: NodeProps) {
       </div>
 
       {responders.map((port, i) => (
-        <PortHandle key={port.id} port={port} index={i} count={responders.length} />
+        <PortHandle
+          key={port.id}
+          nodeId={nodeId}
+          port={port}
+          index={i}
+          count={responders.length}
+          free={free.has(port.id)}
+        />
       ))}
       {requesters.map((port, i) => (
-        <PortHandle key={port.id} port={port} index={i} count={requesters.length} />
+        <PortHandle
+          key={port.id}
+          nodeId={nodeId}
+          port={port}
+          index={i}
+          count={requesters.length}
+          free={free.has(port.id)}
+        />
       ))}
       {oob.map((port) => (
-        <PortHandle key={port.id} port={port} index={0} count={1} />
+        <PortHandle
+          key={port.id}
+          nodeId={nodeId}
+          port={port}
+          index={0}
+          count={1}
+          free={free.has(port.id)}
+        />
       ))}
     </div>
   );
 }
 
 function PortHandle({
+  nodeId,
   port,
   index,
   count,
+  free,
 }: {
+  nodeId: string;
   port: PortSpec;
   index: number;
   count: number;
+  free: boolean;
 }) {
+  const t = useT();
+  const quickAdd = usePlacement((s) => s.quickAdd);
   // React Flow's source end is the one a drag starts from, and a Plexus edge is
   // always drawn from the side that asks, so requester maps to source.
   const isRequester = port.role === "requester";
@@ -173,8 +204,33 @@ function PortHandle({
         style={port.oob ? undefined : { top: offset }}
         aria-hidden="true"
       >
-        {portLabel(port)}
+        {portRole(port)}
       </span>
+
+      {/* A port with nothing on it gets a `+` while the node is hovered: it
+          offers the node types that could legally answer this port and wires
+          the chosen one up. Dragging a wire out by hand still works and is
+          still the only way to reach a node that already exists. */}
+      {free && quickAdd && (
+        <button
+          type="button"
+          className={`pport__add pport__add--${port.oob ? "oob" : isRequester ? "right" : "left"}`}
+          style={port.oob ? undefined : { top: offset }}
+          title={t("port.add", { port: portLabel(port) })}
+          aria-label={t("port.add", { port: portLabel(port) })}
+          onClick={(event) => {
+            event.stopPropagation();
+            const box = (event.target as HTMLElement).getBoundingClientRect();
+            quickAdd({
+              node: nodeId,
+              port: port.id,
+              at: { x: box.right + 6, y: box.top },
+            });
+          }}
+        >
+          +
+        </button>
+      )}
     </>
   );
 }

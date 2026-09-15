@@ -13,7 +13,23 @@ import { create } from "zustand";
 /** Where a dropped node should land: a screen point, or the canvas centre. */
 export type DropTarget = { x: number; y: number } | "center";
 
+/** A port with nothing on it, and where its button sits on screen. */
+export interface QuickAddFrom {
+  node: string;
+  port: string;
+  at: { x: number; y: number };
+}
+
 interface PlacementState {
+  /**
+   * Offer the node types that could legally answer this port, and wire up
+   * whichever is chosen.
+   *
+   * Registered by the canvas, which owns the menu; called from a node's `+`
+   * button, which knows which of its ports has nothing on it. Null until the
+   * canvas has mounted.
+   */
+  quickAdd: ((from: QuickAddFrom) => void) | null;
   /**
    * Add a node of `typeKey` at a screen point (or the visible centre), in the
    * current viewport. Null until the canvas has mounted and registered it.
@@ -24,11 +40,13 @@ interface PlacementState {
   register: (
     place: PlacementState["place"],
     canvasRect: PlacementState["canvasRect"],
+    quickAdd: PlacementState["quickAdd"],
   ) => void;
 }
 
 export const usePlacement = create<PlacementState>((set) => ({
   place: null,
   canvasRect: null,
-  register: (place, canvasRect) => set({ place, canvasRect }),
+  quickAdd: null,
+  register: (place, canvasRect, quickAdd) => set({ place, canvasRect, quickAdd }),
 }));

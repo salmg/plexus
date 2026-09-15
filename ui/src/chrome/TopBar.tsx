@@ -33,6 +33,8 @@ export function TopBar({ problems }: TopBarProps) {
   const consoleOpen = useLayout((s) => s.console);
   const narrow = useLayout((s) => s.narrow);
   const toggle = useLayout((s) => s.toggle);
+  const focus = useLayout((s) => s.focus);
+  const toggleFocus = useLayout((s) => s.toggleFocus);
 
   // Below `narrow` there is not room for eight controls and Run, and Run is
   // not the one that gives way. The rest move into a menu behind one button.
@@ -304,6 +306,17 @@ export function TopBar({ problems }: TopBarProps) {
       ) : (
         controls
       )}
+
+      <button
+        type="button"
+        className={`btn btn--ghost btn--icon${focus ? " is-on" : ""}`}
+        onClick={toggleFocus}
+        aria-pressed={focus}
+        title={t(focus ? "topbar.focus.off" : "topbar.focus.on")}
+        aria-label={t(focus ? "topbar.focus.off" : "topbar.focus.on")}
+      >
+        {focus ? "⤢" : "⤡"}
+      </button>
 
       <input
         ref={fileInput}

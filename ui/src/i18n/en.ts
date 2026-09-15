@@ -23,6 +23,8 @@ export const en = {
   "topbar.inspector": "Inspector",
   "topbar.palette": "Nodes",
   "topbar.more": "More controls",
+  "topbar.focus.on": "Hide the panels and work on the canvas",
+  "topbar.focus.off": "Bring the panels back",
   "topbar.run": "Run",
   "topbar.stop": "Stop",
   "topbar.console.title": "Show or hide the console",
@@ -54,9 +56,11 @@ export const en = {
   "palette.class.transform": "Transforms",
   "palette.class.card": "Card side",
   "palette.class.host": "Host layer",
-  "legend.cardPort": "card port — wants a card",
+  "port.role.requester": "asks",
+  "port.role.responder": "answers",
+  "legend.cardPort": "asks — wants a card",
   "legend.cardPort.title": "A requester: it needs a card on the other end",
-  "legend.terminalPort": "terminal port — is a card",
+  "legend.terminalPort": "answers — is a card",
   "legend.terminalPort.title": "A responder: it behaves as a card would",
 
   // ── Canvas ───────────────────────────────────────────────────────────
@@ -70,6 +74,8 @@ export const en = {
   "canvas.minimap.expand": "Expand the overview",
   "canvas.minimap.hide": "Hide the overview",
   "canvas.minimap.show": "Overview",
+  "edge.remove": "Remove this wire",
+  "port.add": "Add a node on the {port} port",
 
   "menu.configure": "Configure",
   "menu.duplicate": "Duplicate",

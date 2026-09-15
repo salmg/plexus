@@ -7,6 +7,14 @@ while it is running.
 Designed and provided by **[academy.salmg.net](https://academy.salmg.net)**.
 The manual is in [docs/](docs/README.md).
 
+![The editor with the example rig loaded: nodes on the left, the checks on the right, the console beneath](docs/images/01-overview.png)
+
+It follows your system theme, and the toggle in the top bar overrides it. The
+light palette is a set of blues rather than a washed-out version of the dark
+one; both were measured against WCAG on every surface they use.
+
+![The same rig in light mode](docs/images/02-light-mode.png)
+
 > **Authorized use only.** For security research on cards, terminals and hosts
 > you own or have written permission to test. Same terms as atrium.
 
@@ -64,6 +72,12 @@ the second node, with the reason on screen.
   specification, so it warns rather than refuses — see `TAP_BUDGET_WARN_MS`,
   which carries the reason there is one of it and not two.
 
+A graph that fails these will not arm: Run greys out, the count in the top bar
+turns red, and every check names the node it is about rather than describing a
+category of problem.
+
+![A graph that will not arm — three errors and two warnings, each naming its node](docs/images/05-checks.png)
+
 ## A graph is untrusted input
 
 A `.plexus.yaml` is a document people send each other, and it names hardware to
@@ -100,6 +114,8 @@ claim, dial and write, and loads nothing until you say so. That is an
 informed-consent step, not a boundary — the boundary is the workspace and the
 checks, which do not depend on anyone reading a dialog.
 
+![The import review — what the graph will claim, dial, and read or write, before anything is loaded](docs/images/06-import-review.png)
+
 Still true, and deliberate: **there is no authentication on loopback.** Same
 position atrium takes — the operating system already decides who can open a
 local socket. Binding anywhere else refuses to start without
@@ -116,6 +132,8 @@ The runtime's own words stay in English: they arrive already written, over the
 socket, and translating half a trace would be worse than leaving it whole.
 Adding a third language is one file and no framework — see
 [docs/languages.md](docs/languages.md).
+
+![The editor in Spanish, including the checks and the port labels it generates rather than stores](docs/images/03-espanol.png)
 
 ## The console
 
@@ -136,6 +154,8 @@ plexus> pause
 
 The same console works against the simulator and against a card, because both
 answer the same protocol.
+
+![A running graph — the live APDU trace beneath the canvas, Stop armed in the top bar](docs/images/08-running.png)
 
 ---
 
@@ -219,6 +239,11 @@ The last two lines are the point: what the card said, and what the terminal was
 told. `plexus nodes` marks which node types this build can actually bind — the
 rest name the hardware or daemon they need and refuse at bind time.
 
+The same rig in the editor, where the checks say up front what the CLI can only
+prove by running it — *nothing to fix, this graph is ready to arm*:
+
+![A rig that will run with no hardware in it](docs/images/07-runnable-rig.png)
+
 Tests:
 
 ```bash
@@ -271,6 +296,8 @@ Every node in the catalogue maps onto something that already exists there: a
 `CardTransport` implementation, a `SmartcardOS`, or the `on_command` /
 `on_response` pair the mutation engine exposes. A mutation node's config *is*
 an atrium playbook — the files in `vendor/atrium/playbooks/` paste in unchanged.
+
+![A mutation node selected, with its atrium playbook inline in the inspector](docs/images/04-inspector.png)
 
 ## What is not built yet
 

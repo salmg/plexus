@@ -71,6 +71,23 @@ export function portLabel(port: PortSpec): string {
   return catalogueText(`port.${port.id}`, port.label);
 }
 
+/**
+ * What a port *does*, for the label printed on the node.
+ *
+ * Separate from `portLabel`, which names what belongs on the other end — "card
+ * port" means "I need a card here", and "terminal port" means "a terminal
+ * plugs in here, so I behave as a card". Consistent, and it reads backwards at
+ * a glance: a card port wiring to a terminal port looks like a card going to a
+ * terminal when it is the asking side meeting the answering side.
+ *
+ * So the node shows the rule — asks, answers — and the checks keep saying
+ * "card port", where naming the thing on the other end is what makes the
+ * sentence useful.
+ */
+export function portRole(port: PortSpec): string {
+  return t(`port.role.${port.role}`);
+}
+
 export function classLabel(nodeClass: string): string {
   return t(`palette.class.${nodeClass}`);
 }
