@@ -11,6 +11,51 @@
   padding: 10px 10px 4px;
 }
 
+.palette__group--collapsed {
+  padding-bottom: 2px;
+}
+
+/*
+ * The group heading is a button now, so the whole row folds the group. It
+ * inherits the heading's colour (set per class below) rather than a button's
+ * own, and the count sits at the far end so a folded group still says how many
+ * nodes are tucked inside it.
+ */
+.palette__group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.palette__group-label {
+  flex: 1;
+  text-align: left;
+}
+
+.palette__group-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.palette__group-chevron {
+  flex: none;
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+
+.palette__group--collapsed .palette__group-chevron {
+  transform: rotate(0deg);
+}
+
 /*
  * The group heading takes its class's colour too. It is the thing you scan
  * when looking for where a kind of node lives, and a column of identical grey
@@ -248,11 +293,38 @@
 /* ── Console ──────────────────────────────────────────────────────────── */
 
 .console {
+  position: relative;
   display: grid;
   grid-template-rows: 32px minmax(0, 1fr);
   min-height: 0;
   background: var(--surface-sunken);
   border-top: 1px solid var(--border);
+}
+
+/*
+ * The grab strip for resizing the console.
+ *
+ * It straddles the top border rather than sitting below it, so the target is
+ * the seam between the canvas and the console — where a pointer already goes to
+ * resize. Absolute, so it stays out of the grid; a hair of accent on hover and
+ * focus says it is draggable, and it is a focusable separator so the keyboard
+ * can nudge the edge too.
+ */
+.console__resizer {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 7px;
+  z-index: 5;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.console__resizer:hover,
+.console__resizer:focus-visible {
+  background: var(--accent-wash);
+  outline: none;
 }
 
 .console__tools {

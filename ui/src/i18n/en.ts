@@ -21,13 +21,13 @@ export const en = {
   "topbar.new": "New",
   "topbar.console": "Console",
   "topbar.inspector": "Inspector",
-  "topbar.palette": "Palette",
+  "topbar.palette": "Nodes",
   "topbar.more": "More controls",
   "topbar.run": "Run",
   "topbar.stop": "Stop",
   "topbar.console.title": "Show or hide the console",
   "topbar.inspector.title": "Show or hide the inspector",
-  "topbar.palette.title": "Show or hide the node palette",
+  "topbar.palette.title": "Show or hide the nodes panel",
   "layout.close": "Close this panel",
   "topbar.runtime.title": "Where the graph would actually run",
   "runtime.confirmRemote":
@@ -44,7 +44,7 @@ export const en = {
   "count.warnings_other": "{count} warnings",
 
   // ── Palette ──────────────────────────────────────────────────────────
-  "palette.title": "Palette",
+  "palette.title": "Nodes",
   "palette.filter": "Filter nodes",
   "palette.empty": "No node matches “{query}”.",
   "palette.needs": "Needs {needs}. This runtime cannot bind it.",
@@ -142,6 +142,7 @@ export const en = {
 
   // ── Console ──────────────────────────────────────────────────────────
   "console.title": "Console",
+  "console.resize": "Drag to resize the console",
   "console.streamOn": "Stream on",
   "console.streamOff": "Stream off",
   "console.clear": "Clear",

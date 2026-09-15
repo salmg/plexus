@@ -30,6 +30,35 @@ const KEYS: Record<Panel, string> = {
   console: "plexus.console-open",
 };
 
+/** Where a dragged console height is remembered. */
+const CONSOLE_HEIGHT_KEY = "plexus.console-height";
+
+/**
+ * How small and how large the console may be dragged, in pixels.
+ *
+ * The floor keeps a prompt and a line or two visible — smaller than that and
+ * the terminal is a slit. The ceiling is most of the viewport rather than all
+ * of it, so the canvas never disappears entirely behind the console.
+ */
+export const CONSOLE_MIN_HEIGHT = 96;
+
+function consoleMaxHeight(): number {
+  if (typeof window === "undefined") return 800;
+  return Math.max(CONSOLE_MIN_HEIGHT, Math.round(window.innerHeight * 0.8));
+}
+
+function clampConsole(px: number): number {
+  return Math.min(consoleMaxHeight(), Math.max(CONSOLE_MIN_HEIGHT, Math.round(px)));
+}
+
+/** The remembered console height, or null to fall back to the CSS default. */
+function savedConsoleHeight(): number | null {
+  const value = remembered(CONSOLE_HEIGHT_KEY);
+  if (!value) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? clampConsole(n) : null;
+}
+
 /**
  * The two widths where the layout changes its mind, and why they differ.
  *
@@ -97,9 +126,17 @@ export interface LayoutState {
   /** The user has taken over the inspector; stop opening and closing it for them. */
   pinned: boolean;
 
+  /**
+   * The console's height in pixels when the user has dragged it, or null to use
+   * the CSS default. Only applies where the console is docked (not compact,
+   * where it is a bottom sheet with its own height).
+   */
+  consoleHeight: number | null;
+
   toggle: (panel: Panel) => void;
   close: (panel: Panel) => void;
   closeDrawers: () => void;
+  setConsoleHeight: (px: number) => void;
   measure: () => void;
 }
 
@@ -115,6 +152,7 @@ export const useLayout = create<LayoutState>((set, get) => ({
   inspectorOverlay: under(INSPECTOR_MIN_WIDTH),
   narrow: under(NARROW_WIDTH),
   pinned: false,
+  consoleHeight: savedConsoleHeight(),
 
   toggle: (panel) => {
     const open = !get()[panel];
@@ -137,6 +175,12 @@ export const useLayout = create<LayoutState>((set, get) => ({
     const { compact, inspectorOverlay } = get();
     if (compact) set({ palette: false, inspector: false, console: false });
     else if (inspectorOverlay) set({ inspector: false });
+  },
+
+  setConsoleHeight: (px) => {
+    const height = clampConsole(px);
+    remember(CONSOLE_HEIGHT_KEY, String(height));
+    set({ consoleHeight: height });
   },
 
   measure: () => {

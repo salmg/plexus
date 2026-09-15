@@ -42,13 +42,13 @@ const esChrome: Record<MessageKey, string> = {
   "topbar.new": "Nuevo",
   "topbar.console": "Consola",
   "topbar.inspector": "Inspector",
-  "topbar.palette": "Paleta",
+  "topbar.palette": "Nodos",
   "topbar.more": "Más controles",
   "topbar.run": "Ejecutar",
   "topbar.stop": "Detener",
   "topbar.console.title": "Mostrar u ocultar la consola",
   "topbar.inspector.title": "Mostrar u ocultar el inspector",
-  "topbar.palette.title": "Mostrar u ocultar la paleta de nodos",
+  "topbar.palette.title": "Mostrar u ocultar el panel de nodos",
   "layout.close": "Cerrar este panel",
   "topbar.runtime.title": "Dónde se ejecutaría el grafo realmente",
   "runtime.confirmRemote":
@@ -65,7 +65,7 @@ const esChrome: Record<MessageKey, string> = {
   "count.warnings_other": "{count} advertencias",
 
   // ── Paleta ───────────────────────────────────────────────────────────
-  "palette.title": "Paleta",
+  "palette.title": "Nodos",
   "palette.filter": "Filtrar nodos",
   "palette.empty": "Ningún nodo coincide con «{query}».",
   "palette.needs": "Necesita {needs}. Este runtime no puede enlazarlo.",
@@ -164,6 +164,7 @@ const esChrome: Record<MessageKey, string> = {
 
   // ── Consola ──────────────────────────────────────────────────────────
   "console.title": "Consola",
+  "console.resize": "Arrastra para redimensionar la consola",
   "console.streamOn": "Traza activa",
   "console.streamOff": "Traza parada",
   "console.clear": "Limpiar",

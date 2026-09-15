@@ -30,6 +30,7 @@ export type IconName =
   | "eye"
   | "clock"
   | "pause"
+  | "chevron"
   | "node";
 
 const PATHS: Record<IconName, ReactElement> = {
@@ -131,6 +132,13 @@ const PATHS: Record<IconName, ReactElement> = {
   pause: (
     <>
       <path d="M6 3.6v8.8M10 3.6v8.8" />
+    </>
+  ),
+  // A disclosure chevron, drawn pointing right. It is rotated in CSS to point
+  // down when the thing it heads is open, so one path serves both states.
+  chevron: (
+    <>
+      <path d="M6 4l4 4-4 4" />
     </>
   ),
   // The fallback, for a node type this build does not recognise.

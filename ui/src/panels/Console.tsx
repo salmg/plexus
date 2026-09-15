@@ -17,6 +17,7 @@ import { FitAddon } from "@xterm/addon-fit";
 
 import type { ApduEvent, LogLine } from "../graph/types";
 import { t as translate, useT } from "../i18n";
+import { useLayout } from "../store/useLayout";
 import { useRuntime } from "../store/useRuntime";
 
 // The four colours below are ANSI slots, not literal colours, and the theme
@@ -63,13 +64,59 @@ function themeFromCss(): Record<string, string> {
   };
 }
 
+/** How far the arrow keys nudge the console edge when the handle has focus. */
+const RESIZE_STEP = 24;
+
 export function Console() {
   const host = useRef<HTMLDivElement | null>(null);
+  const section = useRef<HTMLElement | null>(null);
   const term = useRef<Terminal | null>(null);
   const fit = useRef<FitAddon | null>(null);
   const t = useT();
   const [muted, setMuted] = useState(false);
   const send = useRuntime((s) => s.send);
+
+  // The console is a docked row whose height the user can drag. In compact
+  // layouts it is a bottom sheet with its own height, so the drag is off and
+  // the stored height is not applied — CSS owns it there.
+  const compact = useLayout((s) => s.compact);
+  const consoleHeight = useLayout((s) => s.consoleHeight);
+  const setConsoleHeight = useLayout((s) => s.setConsoleHeight);
+
+  // Drag the top edge up to grow the console, down to shrink it. The height
+  // that a drag starts from is whatever is on screen now — the stored value if
+  // there is one, otherwise the measured height of the CSS default.
+  const startResize = (event: React.PointerEvent) => {
+    if (compact) return;
+    event.preventDefault();
+    const startY = event.clientY;
+    const startH =
+      consoleHeight ?? section.current?.getBoundingClientRect().height ?? 232;
+    const onMove = (move: PointerEvent) => {
+      setConsoleHeight(startH + (startY - move.clientY));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const nudgeResize = (event: React.KeyboardEvent) => {
+    if (compact) return;
+    const current =
+      consoleHeight ?? section.current?.getBoundingClientRect().height ?? 232;
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setConsoleHeight(current + RESIZE_STEP);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setConsoleHeight(current - RESIZE_STEP);
+    }
+  };
 
   // The terminal is built once and lives outside React's render cycle, so it
   // reads these through refs rather than closing over a stale value.
@@ -310,7 +357,27 @@ export function Console() {
   }, []);
 
   return (
-    <section className="console" aria-label={t("console.title")}>
+    <section
+      ref={section}
+      className="console"
+      aria-label={t("console.title")}
+      style={
+        !compact && consoleHeight != null
+          ? { flexBasis: consoleHeight, height: consoleHeight }
+          : undefined
+      }
+    >
+      {!compact && (
+        <div
+          className="console__resizer"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label={t("console.resize")}
+          tabIndex={0}
+          onPointerDown={startResize}
+          onKeyDown={nudgeResize}
+        />
+      )}
       <div className="panel-head">
         <span>{t("console.title")}</span>
         <div className="console__tools">
