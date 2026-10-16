@@ -38,9 +38,21 @@ un botón que pulsas tú.
   directamente y quiere 22.18.
 - **Un lector, un teléfono o un SimTrace2** — sólo para los nodos que tocan
   hardware, y sólo cuando armes uno. Lo demás funciona en un portátil.
+- **pyscard, para un lector PC/SC** — el extra `hardware`, en el mismo Python
+  que ejecuta Plexus. En Linux se compila desde el código fuente, así que
+  instala antes las cabeceras:
+
+  ```bash
+  sudo apt install pcscd libpcsclite-dev swig python3-dev   # Linux only
+  pip install -e ".[hardware]"
+  ```
+
+  Si el selector de lectores sigue vacío, la frase que aparece debajo dice qué
+  pieza falta; `plexus nodes` imprime la misma.
 
 `vendor/atrium` es un submódulo de git, por eso el clon de arriba lleva
-`--recurse-submodules`. Si ya lo clonaste sin él:
+`--recurse-submodules`. El Download ZIP de GitHub nunca lo incluye. Si ya lo
+clonaste sin él:
 
 ```bash
 git submodule update --init vendor/atrium

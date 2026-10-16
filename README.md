@@ -35,6 +35,8 @@ cd plexus
 ```
 
 If you already cloned without the flag: `git submodule update --init vendor/atrium`.
+GitHub's **Download ZIP** never includes submodules, so a ZIP copy has an
+empty `vendor/atrium` too; clone instead.
 
 **2. Install the runtime into a virtual environment.**
 
@@ -94,6 +96,47 @@ does not have. To run something real instead:
 To build that rig yourself from an empty canvas, follow
 [Your first rig](docs/first-run.md).
 
+### Using a card reader
+
+The quick start leaves out the reader libraries on purpose, so a machine with
+no reader needs no compiler. To bind a contact card in a PC/SC reader (an SCM
+SCR3310, an Identiv, a Gemalto), add them:
+
+**1. The PC/SC service and headers.** On Linux, pyscard builds from source, so
+it needs these before pip can install it:
+
+```bash
+sudo apt install pcscd libpcsclite-dev swig python3-dev
+```
+
+On Windows and macOS the PC/SC service is built in, and pip usually finds a
+ready-made pyscard.
+
+**2. pyscard, into the same virtual environment as Plexus.** With `.venv`
+active:
+
+```bash
+pip install -e ".[hardware]"
+```
+
+Installing it into another Python is the usual way to have pyscard and still
+see no reader; the editor names the Python it is looking in.
+
+**3. Restart `plexus up`**, add a **PC/SC reader** node from **Card side**, and
+pick the reader in the inspector. If you plugged the reader in or installed
+pyscard while the page was open, press **Look again** under the picker.
+
+When the picker is empty it says why, in the runtime's words: atrium missing,
+pyscard missing (and in which Python), pcscd not answering, or only atrium's
+virtual reader (`Virtual PCD`, from vpcd) visible, which is never offered
+because it is where atrium presents a card, not where one sits. `devices` in
+the console and `plexus nodes` print the same sentence.
+
+The PC/SC reader is the only hardware Plexus discovers today. SimTrace2, the
+ACR122U and the virtual reader nodes can be drawn and checked, but their
+pickers stay empty: they are not built yet, and the inspector says what each
+one needs. See [Running on hardware](docs/hardware.md).
+
 ### Other ways to run it
 
 | You want | Run | Needs |
@@ -121,6 +164,10 @@ nobody reads.
   `--no-build`. Install Node, or build once by hand:
   `cd ui && npm install && npm run build:bundle`.
 - **The port is taken.** `plexus up --port 8901`.
+- **`pcsc_scan` sees the reader and Plexus does not.** Read the sentence under
+  the empty picker, or run `plexus nodes`. It is almost always pyscard missing
+  from the Python that runs Plexus; see
+  [Using a card reader](#using-a-card-reader).
 - **A graph cannot find its capture or trace file.** Paths in a graph resolve
   inside the workspace, which is the directory you started `plexus` in. Start
   it from the repository root, or widen it with `PLEXUS_WORKSPACE`.

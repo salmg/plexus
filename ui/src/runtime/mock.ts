@@ -145,6 +145,11 @@ export class MockRuntime implements Runtime {
     this.handlers = null;
   }
 
+  refreshDevices(): void {
+    // The invented devices never change; answering keeps the contract the same.
+    this.handlers?.onDevices(DEVICES);
+  }
+
   async arm(graph: PlexusGraph): Promise<void> {
     this.graph = graph;
     this.chain = buildChain(graph);

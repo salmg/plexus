@@ -127,12 +127,9 @@ def _edges(engine: Engine, graph: Optional[Graph], args) -> Result:
 
 
 def _devices(engine: Engine, graph: Optional[Graph], args) -> Result:
-    devices = engine.devices()
+    devices, problem = engine.discovery()
     if not devices:
-        return [
-            "No readers found. Plug one in, or check that the PC/SC service is",
-            "running and pyscard is installed (pip install -e '.[hardware]').",
-        ], None
+        return ["No readers found.", problem or "Plug one in."], None
     return [
         "%-4s %-18s %s" % ("ok" if d.available else "gone", d.id, d.name) for d in devices
     ], None

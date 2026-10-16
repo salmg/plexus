@@ -151,17 +151,19 @@ PENDING = {
     "cardproxy": "atrium's remote transport and a running card proxy",
 }
 
-#: What the pcsc node is waiting on, when it is waiting on anything.
-_PCSC_NEEDS = "pyscard and a reader attached to this machine"
-
-
 def pcsc_pending_reason() -> Optional[str]:
-    """Why the pcsc node cannot bind here, or None when a reader is present."""
-    if not _atrium.atrium_present():
-        return _PCSC_NEEDS
-    if not _atrium.pcsc_readers():
-        return _PCSC_NEEDS
-    return None
+    """
+    What the pcsc node is waiting on here, or None when a reader is present.
+
+    The specific piece, not a list of everything it could be: "pyscard in this
+    Python" and "a reader attached" send a person to different places, and the
+    generic "pyscard and a reader" sent them to check a reader that pcsc_scan
+    could already see.
+    """
+    found = _atrium.pcsc_discovery()
+    if found.readers:
+        return None
+    return found.needs or "a reader attached to this machine"
 
 
 def pending() -> Dict[str, str]:

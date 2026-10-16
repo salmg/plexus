@@ -27,7 +27,12 @@ export interface RuntimeHandlers {
   onEdge: (edgeId: string, telemetry: Partial<EdgeTelemetry>) => void;
   onApdu: (event: ApduEvent) => void;
   onLog: (line: LogLine) => void;
-  onDevices: (devices: Device[]) => void;
+  /**
+   * The full device list, and why it is empty when it is: no pyscard in the
+   * runtime's Python, no atrium checkout, pcscd refusing. In the runtime's own
+   * words, which stay English like the rest of what it says.
+   */
+  onDevices: (devices: Device[], problem?: string) => void;
   /**
    * Node types this runtime cannot bind, and what each is waiting on.
    *
@@ -57,6 +62,13 @@ export interface Runtime {
 
   /** One console line in, zero or more lines out. */
   command: (line: string) => Promise<ConsoleResult>;
+
+  /**
+   * Ask for the devices again. The answer arrives through `onDevices`, as on
+   * connect: a reader plugged in, or pyscard installed, after the page
+   * connected used to need a reload to show.
+   */
+  refreshDevices: () => void;
 }
 
 export function now(): number {

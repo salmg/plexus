@@ -36,7 +36,7 @@ type ServerFrame =
   | { type: "edge"; id: string; telemetry: Partial<EdgeTelemetry> }
   | { type: "apdu"; event: ApduEvent }
   | { type: "log"; line: LogLine }
-  | { type: "devices"; devices: Device[] }
+  | { type: "devices"; devices: Device[]; problem?: string }
   | { type: "implementations"; needs: Record<string, string> }
   | { type: "result"; id: string; lines: string[]; level?: "info" | "error" }
   | { type: "error"; message: string }
@@ -132,6 +132,13 @@ export class WebSocketRuntime implements Runtime {
       this.pending.set(id, { resolve, reject, timer });
       this.send({ type: "command", id, line });
     });
+  }
+
+  refreshDevices(): void {
+    // Quiet when disconnected: reconnecting sends `hello`, and the runtime
+    // answers that with the devices anyway.
+    if (this.socket?.readyState !== WebSocket.OPEN) return;
+    this.send({ type: "devices" });
   }
 
   /* ── Plumbing ────────────────────────────────────────────────────────── */
@@ -237,7 +244,7 @@ export class WebSocketRuntime implements Runtime {
         handlers.onLog(frame.line);
         return;
       case "devices":
-        handlers.onDevices(frame.devices);
+        handlers.onDevices(frame.devices, frame.problem);
         return;
       case "implementations":
         handlers.onUnavailable(

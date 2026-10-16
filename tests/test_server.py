@@ -709,16 +709,53 @@ def test_nodes_and_edges_report_the_armed_chain(client):
         socket.__exit__(None, None, None)
 
 
+#: Why a machine has no reader, as the adapter would put it.
+_NO_PYSCARD = "pyscard is not installed in the Python running Plexus (/venv/bin/python)."
+
+
 def test_devices_says_what_to_do_when_no_reader_is_attached(client, monkeypatch):
     # Discovery is live now, so this pins the empty case rather than the build:
-    # a runtime with no reader tells you how to get one seen, and does not just
+    # a runtime with no reader says which piece is missing, and does not just
     # say nothing.
-    monkeypatch.setattr("plexus.runtime.engine.discover_devices", lambda: [])
+    monkeypatch.setattr(
+        "plexus.runtime.engine.discover_hardware", lambda: ([], _NO_PYSCARD)
+    )
     with client.websocket_connect("/ws") as socket:
         socket.send_json({"type": "hello", "version": 1})
         collect(socket, until="state")
         lines = answer(socket, "devices")["lines"]
-        assert any("No readers found" in line for line in lines)
+        assert lines == ["No readers found.", _NO_PYSCARD]
+
+
+def test_the_devices_frame_carries_the_reason_the_list_is_empty(client, monkeypatch):
+    monkeypatch.setattr(
+        "plexus.runtime.engine.discover_hardware", lambda: ([], _NO_PYSCARD)
+    )
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        frames = collect(socket, until="state")
+    devices_frame = next(f for f in frames if f["type"] == "devices")
+    assert devices_frame == {"type": "devices", "devices": [], "problem": _NO_PYSCARD}
+
+
+def test_the_editor_can_ask_for_the_devices_again(client, monkeypatch):
+    # Plug a reader in after the page connected: the editor asks, and gets the
+    # list and the implementations both, because pcsc's readiness moved too.
+    from plexus.graph import Device
+
+    seen = {"answer": ([], _NO_PYSCARD)}
+    monkeypatch.setattr("plexus.runtime.engine.discover_hardware", lambda: seen["answer"])
+    with client.websocket_connect("/ws") as socket:
+        socket.send_json({"type": "hello", "version": 1})
+        collect(socket, until="state")
+
+        reader = Device(id="pcsc:SCR 3310", kind="pcsc", name="SCR 3310", available=True)
+        seen["answer"] = ([reader], "")
+        socket.send_json({"type": "devices"})
+        frames = collect(socket, until="implementations")
+    devices_frame = next(f for f in frames if f["type"] == "devices")
+    assert [d["id"] for d in devices_frame["devices"]] == ["pcsc:SCR 3310"]
+    assert "problem" not in devices_frame
 
 
 def test_a_discovered_reader_reaches_the_editor(client, monkeypatch):
@@ -734,7 +771,7 @@ def test_a_discovered_reader_reaches_the_editor(client, monkeypatch):
         available=True,
         detail="contact",
     )
-    monkeypatch.setattr("plexus.runtime.engine.discover_devices", lambda: [reader])
+    monkeypatch.setattr("plexus.runtime.engine.discover_hardware", lambda: ([reader], ""))
     with client.websocket_connect("/ws") as socket:
         socket.send_json({"type": "hello", "version": 1})
         frames = collect(socket, until="state")

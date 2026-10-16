@@ -425,6 +425,20 @@ body {
   color: var(--text-faint);
 }
 
+/* The runtime's reason a picker is empty. It names a path and a command, so it
+   wraps anywhere rather than pushing the inspector sideways. */
+.field__help--problem {
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.field__refresh {
+  height: 24px;
+  margin-top: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
 .field__error {
   margin: 4px 0 0;
   font-size: 12px;

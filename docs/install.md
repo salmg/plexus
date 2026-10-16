@@ -38,9 +38,21 @@ it is a button you press.
   directly and wants 22.18.
 - **A reader, a phone or a SimTrace2** — only for the nodes that touch
   hardware, and only when you arm one. Everything else runs on a laptop.
+- **pyscard, for a PC/SC reader** — the `hardware` extra, in the same Python
+  that runs Plexus. On Linux it builds from source, so install the headers
+  first:
+
+  ```bash
+  sudo apt install pcscd libpcsclite-dev swig python3-dev   # Linux only
+  pip install -e ".[hardware]"
+  ```
+
+  If the reader picker stays empty, the sentence under it says which piece is
+  missing; `plexus nodes` prints the same one.
 
 `vendor/atrium` is a git submodule, which is why the clone above says
-`--recurse-submodules`. If you already cloned without it:
+`--recurse-submodules`. GitHub's Download ZIP never includes it. If you already
+cloned without it:
 
 ```bash
 git submodule update --init vendor/atrium

@@ -26,6 +26,7 @@ import type { Problem } from "../graph/validate";
 import type { PlexusNode } from "../graph/types";
 import { useGraph } from "../store/useGraph";
 import { useRuntime } from "../store/useRuntime";
+import { deviceNotes } from "./deviceNotes";
 
 /** A node's name as shown: its own label, else the translated type title. */
 function nodeLabelOf(node: PlexusNode): string {
@@ -358,6 +359,9 @@ function Field({ node, field }: { node: PlexusNode; field: FieldSpec }) {
   const t = useT();
   const updateConfig = useGraph((s) => s.updateConfig);
   const devices = useGraph((s) => s.devices);
+  const devicesProblem = useGraph((s) => s.devicesProblem);
+  const refreshDevices = useRuntime((s) => s.refreshDevices);
+  const unavailable = useRuntime((s) => s.unavailable);
 
   // The catalogue's default when the key is absent, because that is what the
   // runtime does: `config.get("logMutations", True)`. Reading the raw config
@@ -386,28 +390,42 @@ function Field({ node, field }: { node: PlexusNode; field: FieldSpec }) {
 
   if (field.kind === "device") {
     const candidates = devices.filter((d) => d.kind === field.deviceKind);
+    const { empty, problem } = deviceNotes(
+      field.deviceKind,
+      candidates,
+      devicesProblem,
+      unavailable[node.type],
+    );
     return (
-      <label className="field">
-        <span className="field__label">{fieldLabel(node.type, field)}</span>
-        <select
-          className="select"
-          value={typeof value === "string" ? value : ""}
-          onChange={(e) => set(e.target.value)}
-        >
-          <option value="">{t("field.chooseDevice")}</option>
-          {candidates.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.available ? d.name : t("field.notPresent", { name: d.name })}
-            </option>
-          ))}
-        </select>
-        {candidates.length === 0 && (
+      <div className="field">
+        <label>
+          <span className="field__label">{fieldLabel(node.type, field)}</span>
+          <select
+            className="select"
+            value={typeof value === "string" ? value : ""}
+            onChange={(e) => set(e.target.value)}
+          >
+            <option value="">{t("field.chooseDevice")}</option>
+            {candidates.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.available ? d.name : t("field.notPresent", { name: d.name })}
+              </option>
+            ))}
+          </select>
+        </label>
+        {empty && (
           <p className="field__help">
-            {t("field.noDevices", { kind: field.deviceKind })}
+            {empty.key === "field.notBuilt"
+              ? t(empty.key, { kind: field.deviceKind, needs: empty.needs })
+              : t(empty.key, { kind: field.deviceKind })}
           </p>
         )}
+        {problem && <p className="field__help field__help--problem">{problem}</p>}
+        <button type="button" className="btn btn--ghost field__refresh" onClick={refreshDevices}>
+          {t("field.lookAgain")}
+        </button>
         {help}
-      </label>
+      </div>
     );
   }
 

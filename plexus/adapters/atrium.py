@@ -20,8 +20,10 @@ not invent these shapes; it found them.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -142,29 +144,112 @@ def load_recorded_card(path: str | Path, strict: bool = False) -> Any:
         raise AtriumUnavailable(str(exc)) from exc
 
 
-def pcsc_readers() -> list[dict]:
-    """
-    The PC/SC readers atrium can see on this machine, newest question each call.
+#: What to run when the reader stack is missing a piece. One table, so the
+#: picker, the console, `plexus nodes` and the palette all say the same thing.
+PYSCARD_INSTALL = 'pip install -e ".[hardware]"'
+PCSC_LINUX_PACKAGES = "sudo apt install pcscd libpcsclite-dev swig python3-dev"
 
-    Each entry is ``{"index", "name", "kind", "virtual", "pn532"}`` — atrium's
-    own ``Reader.to_dict()``.  The list is empty when there is no atrium
-    checkout, no pyscard, or no reader plugged in: the ordinary states of a
-    machine running only half this toolkit.
 
-    It never raises.  Discovery runs on a poll and beside the editor, so an
-    exception here would be worse than an empty list on a laptop with nothing
-    attached — the reader simply does not appear, which is the truth.
+@dataclass(frozen=True)
+class ReaderDiscovery:
     """
+    The readers a card can sit in, and why there are none when there are none.
+
+    ``readers`` leaves out atrium's virtual reader: it is atrium's own output
+    side, the thing presenting a card to a terminal, so offering it as a slot
+    would be the one wiring mistake ``core.readers`` exists to prevent.
+
+    ``problem`` is a sentence for a person, empty when a reader is there.
+    ``needs`` is the same answer as a noun phrase, the shape the palette and
+    ``node_requirements`` read ("Needs <needs>."), empty likewise.
+
+    The empty list used to be the whole answer. A missing atrium checkout, a
+    pyscard installed into a different Python, and a pcscd refusing this user
+    all looked exactly like a machine with nothing plugged in, while
+    ``pcsc_scan`` listed the reader in the next terminal.
+    """
+
+    readers: list = field(default_factory=list)
+    problem: str = ""
+    needs: str = ""
+
+
+def pcsc_discovery() -> ReaderDiscovery:
+    """
+    The card readers on this machine, asked fresh each call. Never raises.
+
+    Discovery runs beside the editor and on every graph edit, so an exception
+    here would be worse than an answer saying what is missing.
+    """
+    if not atrium_present():
+        return ReaderDiscovery(
+            problem=(
+                "atrium is not checked out, so no reader can be listed. Inside a "
+                "clone of this repository: git submodule update --init "
+                "vendor/atrium (a ZIP download never includes it), or set %s "
+                "to an atrium checkout." % ATRIUM_VARIABLE
+            ),
+            needs="the atrium submodule (git submodule update --init vendor/atrium)",
+        )
+
+    # Asked here rather than read out of atrium's own message, which says
+    # `pip install pyscard` and nothing about which Python. The usual way to
+    # get here with pyscard "installed" is to have installed it into another
+    # interpreter than the one running Plexus.
+    if importlib.util.find_spec("smartcard") is None:
+        return ReaderDiscovery(
+            problem=(
+                "pyscard is not installed in the Python running Plexus (%s), so "
+                "no PC/SC reader can be opened. Install it into that environment: "
+                "%s. On Linux pyscard builds from source and needs the PC/SC "
+                "headers and swig first: %s."
+                % (sys.executable, PYSCARD_INSTALL, PCSC_LINUX_PACKAGES)
+            ),
+            needs="pyscard in this Python (%s)" % PYSCARD_INSTALL,
+        )
+
     try:
         require_atrium()
         from core.readers import probe
-    except (AtriumUnavailable, ImportError):
-        return []
+    except (AtriumUnavailable, ImportError) as exc:
+        return ReaderDiscovery(
+            problem="atrium's reader discovery will not import: %s" % exc,
+            needs="atrium's core.readers to import",
+        )
     try:
-        readers, _problem = probe()  # probe() is documented never to raise
-    except Exception:  # noqa: BLE001 — belt and braces around a third party
-        return []
-    return [r.to_dict() for r in readers]
+        found, problem = probe()  # probe() is documented never to raise
+    except Exception as exc:  # noqa: BLE001 — belt and braces around a third party
+        found, problem = [], "Listing readers failed: %s" % exc
+
+    readers = [r.to_dict() for r in found]
+    slots = [r for r in readers if not r.get("virtual")]
+    if slots:
+        return ReaderDiscovery(readers=slots)
+    if readers:
+        names = ", ".join(r["name"] for r in readers)
+        return ReaderDiscovery(
+            problem=(
+                "Only atrium's virtual reader is visible (%s). That is where atrium "
+                "presents a card to a terminal, not a slot a card sits in. Plug a "
+                "reader in." % names
+            ),
+            needs="a reader attached to this machine",
+        )
+    return ReaderDiscovery(
+        # atrium's own words: "No PC/SC readers found…" or "Could not list
+        # readers (…) — is pcscd running?", which name the cause better than
+        # anything this layer could.
+        problem=problem or "No PC/SC readers found.",
+        needs="a reader attached to this machine, with pcscd running",
+    )
+
+
+def pcsc_readers() -> list[dict]:
+    """
+    The card readers alone, each atrium's own ``Reader.to_dict()``:
+    ``{"index", "name", "kind", "virtual", "pn532"}``, virtual reader left out.
+    """
+    return pcsc_discovery().readers
 
 
 def open_local_card(reader: "int | str | None") -> Any:

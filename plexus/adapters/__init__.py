@@ -12,18 +12,22 @@ that is never edited, so when it moves, the things that break are in here.
 
 from plexus.adapters.atrium import (  # noqa: F401
     AtriumUnavailable,
+    ReaderDiscovery,
     load_mutation_engine,
     load_recorded_card,
     open_local_card,
+    pcsc_discovery,
     pcsc_readers,
     require_atrium,
 )
 
 __all__ = [
     "AtriumUnavailable",
+    "ReaderDiscovery",
     "load_mutation_engine",
     "load_recorded_card",
     "open_local_card",
+    "pcsc_discovery",
     "pcsc_readers",
     "require_atrium",
 ]

@@ -170,6 +170,9 @@ const esChrome: Record<MessageKey, string> = {
   "field.chooseDevice": "Elige un dispositivo",
   "field.notPresent": "{name} — no está presente",
   "field.noDevices": "El runtime no ve ningún dispositivo {kind}.",
+  "field.notBuilt":
+    "Este runtime no lista dispositivos {kind}: el nodo aún no está construido. Necesita {needs}.",
+  "field.lookAgain": "Buscar de nuevo",
   "field.hexOnly": "Sólo dígitos hexadecimales.",
 
   // ── Consola ──────────────────────────────────────────────────────────

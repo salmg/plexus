@@ -366,6 +366,14 @@ def _nodes() -> int:
         "\n· needs hardware or a daemon this build cannot start; "
         "the rest run anywhere."
     )
+    # The one dot that is about this machine rather than this build, so the
+    # one worth a sentence: which piece of the reader stack is missing.
+    if ready.get("pcsc") != "ready":
+        from plexus.runtime import discover_hardware
+
+        _devices, problem = discover_hardware()
+        if problem:
+            print("\npcsc: %s" % problem)
     return 0
 
 

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from plexus.catalogue import CATALOGUE
 from plexus.graph import Graph, Problem, validate
@@ -668,6 +668,10 @@ class Engine:
         """
         return discover_devices()
 
+    def discovery(self) -> Tuple[List[Any], str]:
+        """`devices`, with the reason there are none; see `discover_hardware`."""
+        return discover_hardware()
+
     def telemetry(self, node_id: str) -> NodeTelemetry:
         return self._telemetry.get(node_id, NodeTelemetry())
 
@@ -843,38 +847,39 @@ def node_requirements() -> Dict[str, str]:
     return out
 
 
-def discover_devices() -> List[Any]:
+def discover_hardware() -> Tuple[List[Any], str]:
     """
-    The hardware this runtime can see right now, as graph `Device`s.
+    The hardware this runtime can see right now, as graph `Device`s, and why
+    there is none when there is none.
 
-    Today that is the PC/SC readers atrium reports. The virtual reader is left
-    out on purpose: it is atrium's own output side — the thing presenting a
-    card to a terminal — not a slot a card sits in, so offering it as somewhere
-    to bind a card would be the one wiring mistake `core.readers` exists to
-    prevent.
+    Today that is the PC/SC readers atrium reports, less its virtual reader
+    (see `ReaderDiscovery`). The reason is a sentence for a person and empty
+    when a reader is there: a missing pyscard or atrium checkout must not look
+    like a machine with nothing plugged in.
 
-    Never raises. Discovery runs on a poll and beside the editor; an exception
-    here would be worse than an empty list, and an empty list is the honest
-    answer on a laptop with nothing plugged in.
+    Never raises. Discovery runs beside the editor; an exception here would be
+    worse than an answer saying what is missing.
     """
     from plexus.adapters import atrium as _atrium
     from plexus.graph import Device
 
-    out: List[Any] = []
-    for reader in _atrium.pcsc_readers():
-        if reader.get("virtual"):
-            continue
-        name = reader["name"]
-        out.append(
-            Device(
-                id="pcsc:%s" % name,
-                kind="pcsc",
-                name=name,
-                available=True,
-                detail=reader.get("kind") or None,
-            )
+    found = _atrium.pcsc_discovery()
+    devices: List[Any] = [
+        Device(
+            id="pcsc:%s" % reader["name"],
+            kind="pcsc",
+            name=reader["name"],
+            available=True,
+            detail=reader.get("kind") or None,
         )
-    return out
+        for reader in found.readers
+    ]
+    return devices, found.problem
+
+
+def discover_devices() -> List[Any]:
+    """The devices alone; see `discover_hardware` for why there may be none."""
+    return discover_hardware()[0]
 
 
 __all__ = [
