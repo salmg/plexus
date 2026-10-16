@@ -217,8 +217,8 @@ export const useRuntime = create<RuntimeState>((set, get) => ({
           logTotal: s.logTotal + 1,
         })),
 
-      onDevices: (devices: Device[], problem?: string) =>
-        useGraph.getState().setDevices(devices, problem),
+      onDevices: (devices: Device[], problems?: Record<string, string>) =>
+        useGraph.getState().setDevices(devices, problems),
 
       onUnavailable: (needs) => set({ unavailable: needs }),
     });

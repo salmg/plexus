@@ -360,19 +360,18 @@ class Session:
         editor's Inspector reads — id, kind, name, host, available, detail — so
         `asdict` is the whole translation.
 
-        `problem` says why the list is empty when it is: no pyscard in this
-        Python, no atrium checkout, pcscd refusing. Without it a picker on a
-        machine whose reader `pcsc_scan` lists said only that nothing was
-        there, which was true of the runtime and false of the machine.
+        `problems` says, per device kind, why none is ready: no pyscard in this
+        Python, no atrium checkout, pcscd refusing, a SimTrace2 with no daemon.
+        Without it a picker on a machine whose reader `pcsc_scan` lists said
+        only that nothing was there, which was true of the runtime and false of
+        the machine.
         """
-        devices, problem = self.engine.discovery()
-        frame: Dict[str, Any] = {
+        devices, problems = self.engine.discovery()
+        return {
             "type": "devices",
             "devices": [dataclasses.asdict(d) for d in devices],
+            "problems": problems,
         }
-        if problem:
-            frame["problem"] = problem
-        return frame
 
     async def _refresh_devices(self) -> None:
         """

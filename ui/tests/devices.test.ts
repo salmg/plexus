@@ -42,30 +42,49 @@ function handlers(overrides: Partial<RuntimeHandlers> = {}): RuntimeHandlers {
   };
 }
 
-describe("the line under an empty picker", () => {
+const BOARD: Device = {
+  id: "simtrace2:1-2.3",
+  kind: "simtrace2",
+  name: "SimTrace2 (USB 1-2.3)",
+  host: "",
+  available: true,
+  detail: "no simtrace2-remsim running",
+};
+
+const NO_DAEMON =
+  "The SimTrace2 at 1-2.3 is plugged in, but no simtrace2-remsim is running for it.";
+
+describe("the line under a picker", () => {
   it("shows the runtime's reason for a PC/SC picker", () => {
-    expect(deviceNotes("pcsc", [], NO_PYSCARD, "pyscard in this Python")).toEqual({
+    expect(deviceNotes([], NO_PYSCARD, "pyscard in this Python")).toEqual({
       empty: { key: "field.noDevices" },
       problem: NO_PYSCARD,
     });
   });
 
   it("says nothing extra once a reader is there", () => {
-    expect(deviceNotes("pcsc", [SCR], "", undefined)).toEqual({ empty: null, problem: "" });
+    expect(deviceNotes([SCR], undefined, undefined)).toEqual({ empty: null, problem: "" });
+  });
+
+  it("names a missing daemon even with the board listed", () => {
+    // The board is there to pick; what is missing is the thing to start.
+    expect(deviceNotes([BOARD], NO_DAEMON, undefined)).toEqual({
+      empty: null,
+      problem: NO_DAEMON,
+    });
   });
 
   it("says a node is not built rather than that nothing was found", () => {
-    const needs = "a SimTrace2 and simtrace2-remsim running in a root shell";
-    expect(deviceNotes("simtrace2", [], NO_PYSCARD, needs)).toEqual({
+    const needs = "pyscard, an ACR122U, and atrium's PN532 emulator";
+    expect(deviceNotes([], undefined, needs)).toEqual({
       empty: { key: "field.notBuilt", needs },
-      // The reason is about PC/SC discovery, not about this picker.
       problem: "",
     });
   });
 
   it("falls back to the plain line when the runtime names no need", () => {
     // The simulator: everything binds, so no need is named.
-    expect(deviceNotes("acr122u", [], "", undefined)).toEqual({
+    expect(deviceNotes([], undefined, undefined)).toEqual({
       empty: { key: "field.noDevices" },
       problem: "",
     });
@@ -73,13 +92,16 @@ describe("the line under an empty picker", () => {
 });
 
 describe("the store", () => {
-  it("keeps the reason with the list, and clears it with the next list", () => {
-    useGraph.getState().setDevices([], NO_PYSCARD);
-    expect(useGraph.getState().devicesProblem).toBe(NO_PYSCARD);
+  it("keeps the reasons with the list, and clears them with the next list", () => {
+    useGraph.getState().setDevices([], { pcsc: NO_PYSCARD, simtrace2: NO_DAEMON });
+    expect(useGraph.getState().devicesProblems).toEqual({
+      pcsc: NO_PYSCARD,
+      simtrace2: NO_DAEMON,
+    });
 
-    useGraph.getState().setDevices([SCR]);
-    expect(useGraph.getState().devices).toEqual([SCR]);
-    expect(useGraph.getState().devicesProblem).toBe("");
+    useGraph.getState().setDevices([SCR, BOARD]);
+    expect(useGraph.getState().devices).toEqual([SCR, BOARD]);
+    expect(useGraph.getState().devicesProblems).toEqual({});
   });
 });
 
@@ -126,9 +148,9 @@ describe("asking again", () => {
     const socket = sockets[0];
 
     socket.onmessage?.({
-      data: JSON.stringify({ type: "devices", devices: [], problem: NO_PYSCARD }),
+      data: JSON.stringify({ type: "devices", devices: [], problems: { pcsc: NO_PYSCARD } }),
     });
-    expect(onDevices).toHaveBeenLastCalledWith([], NO_PYSCARD);
+    expect(onDevices).toHaveBeenLastCalledWith([], { pcsc: NO_PYSCARD });
 
     runtime.refreshDevices();
     expect(socket.sent.at(-1)).toEqual({ type: "devices" });

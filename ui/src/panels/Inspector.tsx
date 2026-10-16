@@ -359,7 +359,7 @@ function Field({ node, field }: { node: PlexusNode; field: FieldSpec }) {
   const t = useT();
   const updateConfig = useGraph((s) => s.updateConfig);
   const devices = useGraph((s) => s.devices);
-  const devicesProblem = useGraph((s) => s.devicesProblem);
+  const devicesProblems = useGraph((s) => s.devicesProblems);
   const refreshDevices = useRuntime((s) => s.refreshDevices);
   const unavailable = useRuntime((s) => s.unavailable);
 
@@ -391,9 +391,8 @@ function Field({ node, field }: { node: PlexusNode; field: FieldSpec }) {
   if (field.kind === "device") {
     const candidates = devices.filter((d) => d.kind === field.deviceKind);
     const { empty, problem } = deviceNotes(
-      field.deviceKind,
       candidates,
-      devicesProblem,
+      devicesProblems[field.deviceKind],
       unavailable[node.type],
     );
     return (

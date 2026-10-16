@@ -154,9 +154,20 @@ a model is configured.
 
 **This is the honest part of this page.** The engine binds, drives, rewrites,
 reports and releases. The cards it can bind today are a recorded capture and a
-contact card in a **PC/SC reader**; the terminals are the fingerprint probe and
-the EMV agent, the agent only once a model back end is configured
-(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or a local `ATRIUM_LLM_BASE_URL`).
+contact card in a **PC/SC reader**; the terminals are the fingerprint probe,
+the EMV agent (once a model back end is configured: `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, or a local `ATRIUM_LLM_BASE_URL`), and a real payment
+terminal through a **SimTrace2**.
+
+The SimTrace2 is found the way atrium's dashboard finds it: the board by its
+USB id (1d50:60e3) in `/sys`, the `simtrace2-remsim` serving it in `/proc`.
+Neither is started by Plexus. When the board is there and the daemon is not, the
+picker prints the exact command for that board, and Run is refused until it is
+up (or until "Refuse to start if the daemon is not already up" is switched
+off). Binding then connects atrium's `VirtualCard` to vpcd, and every command
+the terminal sends goes through the chain. What is tested without the board:
+everything from vpcd inwards, against a stand-in vpcd speaking vpcd's framing.
+What still needs a rig: the board, the daemon and a real terminal.
 
 The PC/SC reader is discovered when the editor connects, and again whenever
 you press **Look again** under the reader picker: plug one in, press it, and the
@@ -205,7 +216,7 @@ than design work:
 | Remote card | `transport.remote.RemoteCardTransport` |
 | ACR122U target | `nfc.emulator` — the PN532 in target mode |
 | Virtual reader | `virtual_card.VirtualCard` + `relay_os.RelayOS` |
-| SimTrace2 | the `simtrace2-remsim` daemon, discovered not launched |
+| SimTrace2 | `api/routes/simtrace.py` discovery + `virtual_card.VirtualCard` — **done**, rig run owed |
 
 `CardTransport` is `connect` / `get_atr` / `transmit` / `disconnect`, which is
 exactly what a card-side node has to be. The four transports above are

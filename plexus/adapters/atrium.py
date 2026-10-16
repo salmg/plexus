@@ -26,7 +26,7 @@ import sys
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 #: Where an atrium checkout might be, best guess first.
 #:
@@ -250,6 +250,171 @@ def pcsc_readers() -> list[dict]:
     ``{"index", "name", "kind", "virtual", "pn532"}``, virtual reader left out.
     """
     return pcsc_discovery().readers
+
+
+# ── SimTrace2 ────────────────────────────────────────────────────────────────
+#
+# The chain a SimTrace2 relay runs through, none of it Plexus's to start:
+#
+#   terminal ─► SimTrace2 board ─► simtrace2-remsim ─► PC/SC reader 0
+#            = vpcd's "Virtual PCD" ─► a vpicc on port 35963 ─► the chain
+#
+# The daemon needs raw USB, so the operator starts it in a root shell; atrium
+# refuses to launch it and so does Plexus. What is asked of atrium here is the
+# discovery it already does for its own dashboard (which board, is a daemon up
+# for it, what command would start one) and the vpicc side: `VirtualCard`,
+# which atrium's own relay hands an OS and an attack to.
+
+#: What simtrace2-remsim talks to. atrium binds the same address and port.
+VPCD_HOST = "127.0.0.1"
+VPCD_PORT = 35963
+
+
+@dataclass(frozen=True)
+class SimTraceDiscovery:
+    """
+    The SimTrace2 boards on this machine and the daemon serving each.
+
+    ``boards`` are atrium's own dicts (``usb_path``, ``manufacturer``,
+    ``product``…) with ``daemon`` added: the running simtrace2-remsim for that
+    board, or None. ``problem`` and ``needs`` read as `ReaderDiscovery`'s do,
+    and are empty when a board has a daemon up, which is the state a relay can
+    run in.
+    """
+
+    boards: list = field(default_factory=list)
+    problem: str = ""
+    needs: str = ""
+
+
+def _simtrace_module() -> Any:
+    """
+    atrium's ``api/routes/simtrace.py``, loaded on its own.
+
+    By file rather than ``import api.routes.simtrace``: that would run
+    ``api/__init__.py``, which builds atrium's whole web server, and all that
+    is wanted is two functions that read /sys and /proc. The module still needs
+    fastapi and pydantic at import (it declares its routes), which the
+    ``runtime`` extra brings.
+    """
+    import importlib.util as _util
+
+    root = require_atrium()
+    path = root / "api" / "routes" / "simtrace.py"
+    spec = _util.spec_from_file_location("_plexus_atrium_simtrace", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"no module at {path}")
+    module = _util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def simtrace_discovery() -> SimTraceDiscovery:
+    """The SimTrace2 boards here, asked fresh each call. Never raises."""
+    needs_rig = "a SimTrace2 on USB with simtrace2-remsim running for it"
+    if not sys.platform.startswith("linux"):
+        return SimTraceDiscovery(
+            problem=(
+                "SimTrace2 runs on Linux: the board is found in /sys, its daemon "
+                "in /proc, and simtrace2-remsim and vpcd are Linux tools. You can "
+                "draw and check this graph here; arm it on the machine the board "
+                "is plugged into."
+            ),
+            needs="Linux, " + needs_rig,
+        )
+    if not atrium_present():
+        return SimTraceDiscovery(
+            problem=(
+                "atrium is not checked out, so no SimTrace2 can be found. Inside a "
+                "clone of this repository: git submodule update --init vendor/atrium."
+            ),
+            needs="the atrium submodule (git submodule update --init vendor/atrium)",
+        )
+    try:
+        st = _simtrace_module()
+        boards = list(st.list_devices().get("devices", []))
+        daemons = list(st.find_remsim_processes())
+    except Exception as exc:  # noqa: BLE001 — an import or a /proc read
+        return SimTraceDiscovery(
+            problem=(
+                "atrium's SimTrace2 discovery did not run: %s. It needs the runtime "
+                'extra (pip install -e ".[runtime]").' % exc
+            ),
+            needs=needs_rig,
+        )
+
+    for board in boards:
+        board["daemon"] = next(
+            (d for d in daemons if d.get("usb_path") == board.get("usb_path")), None
+        )
+
+    if not boards:
+        elsewhere = ""
+        if daemons:
+            elsewhere = (
+                " A simtrace2-remsim is running for %s, which is not a board this "
+                "machine can see." % (daemons[0].get("usb_path") or "an unnamed device")
+            )
+        return SimTraceDiscovery(
+            problem=(
+                "No SimTrace2 on USB (vendor 1d50, product 60e3). Plug the board "
+                "in, and check that this VM or container is given the USB "
+                "device.%s" % elsewhere
+            ),
+            needs=needs_rig,
+        )
+
+    if not any(b["daemon"] for b in boards):
+        try:
+            command = st.simtrace_command(boards[0].get("usb_path", ""))["command"]
+        except Exception:  # noqa: BLE001 — the hint is a courtesy
+            command = "sudo simtrace2-remsim --usb-path %s" % boards[0].get("usb_path")
+        return SimTraceDiscovery(
+            boards=boards,
+            problem=(
+                "The SimTrace2 at %s is plugged in, but no simtrace2-remsim is "
+                "running for it. Start it in a root shell; Plexus never launches "
+                "it: %s" % (boards[0].get("usb_path"), command)
+            ),
+            needs="simtrace2-remsim running for the board (Plexus never starts it)",
+        )
+
+    return SimTraceDiscovery(boards=boards)
+
+
+def open_virtual_card(
+    os_: Any, attack: Any, host: Optional[str] = None, port: Optional[int] = None
+) -> Any:
+    """
+    atrium's ``VirtualCard``: the vpicc that answers vpcd for a terminal.
+
+    ``os_`` is asked for the ATR and told about power; ``attack.user_execute``
+    answers each command APDU. That is the pair atrium's own relay hands it
+    (a ``RelayOS`` and an ``InterceptAttack``), and the seam where a Plexus
+    chain stands in for both.
+
+    Connecting is where vpcd is first asked for, so this is where a missing
+    one is refused. ``VirtualCard`` calls ``sys.exit()`` when it cannot
+    connect, which on the relay thread would end the thread with no message;
+    it is turned into one here. The address is read when called, not when this
+    module loaded, so a test can point it at a stand-in vpcd.
+    """
+    host = host or VPCD_HOST
+    port = port or VPCD_PORT
+    require_atrium()
+    try:
+        from virtual_card import VirtualCard
+    except ImportError as exc:  # pragma: no cover - only if atrium moves
+        raise AtriumUnavailable(f"atrium's virtual card will not import: {exc}") from exc
+    try:
+        return VirtualCard(host, port, os_, attack)
+    except SystemExit:
+        raise AtriumUnavailable(
+            "Could not reach vpcd at %s:%d, which is where simtrace2-remsim hands "
+            "the terminal's commands over. Is pcscd running with vpcd loaded "
+            "(the virtualsmartcard package)? `pcsc_scan` should list a "
+            "'Virtual PCD' reader." % (host, port)
+        ) from None
 
 
 def open_local_card(reader: "int | str | None") -> Any:

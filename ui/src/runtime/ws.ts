@@ -36,7 +36,7 @@ type ServerFrame =
   | { type: "edge"; id: string; telemetry: Partial<EdgeTelemetry> }
   | { type: "apdu"; event: ApduEvent }
   | { type: "log"; line: LogLine }
-  | { type: "devices"; devices: Device[]; problem?: string }
+  | { type: "devices"; devices: Device[]; problems?: Record<string, string> }
   | { type: "implementations"; needs: Record<string, string> }
   | { type: "result"; id: string; lines: string[]; level?: "info" | "error" }
   | { type: "error"; message: string }
@@ -244,7 +244,7 @@ export class WebSocketRuntime implements Runtime {
         handlers.onLog(frame.line);
         return;
       case "devices":
-        handlers.onDevices(frame.devices, frame.problem);
+        handlers.onDevices(frame.devices, frame.problems);
         return;
       case "implementations":
         handlers.onUnavailable(

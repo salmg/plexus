@@ -98,8 +98,8 @@ interface GraphState {
    */
   selection: string[];
   devices: Device[];
-  /** The runtime's reason `devices` has no reader in it; empty when it has. */
-  devicesProblem: string;
+  /** Per device kind, the runtime's reason none is ready; absent when one is. */
+  devicesProblems: Record<string, string>;
   theme: Theme;
   dirty: boolean;
 
@@ -108,7 +108,7 @@ interface GraphState {
 
   setGraph: (graph: PlexusGraph, opts?: { clean?: boolean }) => void;
   setName: (name: string) => void;
-  setDevices: (devices: Device[], problem?: string) => void;
+  setDevices: (devices: Device[], problems?: Record<string, string>) => void;
   setTheme: (theme: Theme) => void;
   select: (id: string | null) => void;
   /** Apply React Flow's per-node select changes, keeping pick order. */
@@ -205,7 +205,7 @@ export const useGraph = create<GraphState>((set, get) => {
     dragFrom: null,
     clipboard: null,
     devices: [],
-    devicesProblem: "",
+    devicesProblems: {},
     // Read here rather than restored by an effect: an effect raced the one
     // that persists it, and the default overwrote the saved value often
     // enough that choosing light mode did not survive a reload.
@@ -224,7 +224,7 @@ export const useGraph = create<GraphState>((set, get) => {
       }),
 
     setName: (name) => edit((g) => ({ ...g, name })),
-    setDevices: (devices, problem) => set({ devices, devicesProblem: problem ?? "" }),
+    setDevices: (devices, problems) => set({ devices, devicesProblems: problems ?? {} }),
     setTheme: (theme) => set({ theme }),
     select: (id) => set({ selection: id === null ? [] : [id] }),
 

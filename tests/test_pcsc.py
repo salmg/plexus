@@ -92,7 +92,7 @@ def test_the_device_id_round_trips_back_to_the_reader(one_reader):
 
 def test_discovery_is_empty_and_says_why_with_nothing_attached(no_reader):
     assert discover_devices() == []
-    assert discover_hardware() == ([], _NOTHING.problem)
+    assert discover_hardware()[1]["pcsc"] == _NOTHING.problem
 
 
 # ── readiness ──────────────────────────────────────────────────────────────
@@ -224,8 +224,8 @@ def test_the_reported_ubuntu_machine_offers_the_scr3310_alone(
     assert [r["name"] for r in found.readers] == [names[2]]
     assert found.readers[0]["kind"] == "contact"
 
-    devices, problem = discover_hardware()
-    assert problem == ""
+    devices, problems = discover_hardware()
+    assert "pcsc" not in problems
     assert [d.id for d in devices] == ["pcsc:" + names[2]]
     assert card_nodes.pcsc_pending_reason() is None
 

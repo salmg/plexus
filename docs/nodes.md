@@ -61,19 +61,36 @@ Worth knowing, all three from atrium's own measurements:
   budget and may abandon the transaction. This is a property of relaying over
   USB, not a bug.
 
-### SimTrace2 · needs a SimTrace2 and `simtrace2-remsim` in a root shell
+### SimTrace2 · needs Linux, vpcd, the board, and `simtrace2-remsim` in a root shell
 
 | Field | |
 |---|---|
-| Device | which SimTrace2, when more than one is attached |
-| Refuse to start if the daemon is not already up | the only safe default: the alternative is Plexus launching a root process |
+| Device | which SimTrace2, by USB path; the only one is used when none is picked |
+| Refuse to start if the daemon is not already up | on by default. Off, the node binds without the daemon and waits for it |
 
-Presents a virtual card to a real terminal over the contact interface.
+Presents a virtual card to a real terminal over the contact interface, and
+answers the terminal with whatever card the chain ends in.
+
+The path a command takes: terminal → SimTrace2 → `simtrace2-remsim` → vpcd's
+`Virtual PCD 00 00` reader → atrium's `VirtualCard` on port 35963 → this node →
+the chain. Binding connects to vpcd, so a missing vpcd is refused at Run before
+the card is opened.
 
 The daemon needs raw USB access and is started by hand. **Plexus never launches
 it** — having a request escalate privileges means either a password prompt with
 nowhere to go or a passwordless sudo rule that turns the API into a root shell.
-This node checks it is up and binds to it.
+This node finds the board and the daemon through atrium's own SimTrace2
+discovery, prints the command to start the daemon when it is not up, and binds
+once it is.
+
+Worth knowing:
+
+- Only one program answers vpcd at a time. Stop atrium's own relay first.
+- A power cycle from the terminal is not passed to the card, which stays open
+  for the whole run. A terminal that expects a cold reset between transactions
+  sees a card that kept its state.
+- The ATR the terminal sees is the chain's card's. A recorded capture without
+  an ATR line gives an empty one, which a terminal reads as no card.
 
 ### Virtual reader · needs virtualsmartcard with vpcd loaded into pcscd
 

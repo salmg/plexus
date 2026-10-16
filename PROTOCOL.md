@@ -56,7 +56,7 @@ over a socket is untrusted input that names hardware and dials addresses.
 | `edge` | `{id, telemetry}` — partial `{apdus, lastMs, bytesOut, bytesIn}` |
 | `apdu` | `{event}` — `{seq, t, edge, dir, hex, ms?, mutatedBy?, note?}` |
 | `log` | `{line}` — `{t, level, source, text}` |
-| `devices` | `{devices, problem?}` — the full list, every time; not a delta. `problem` says why there is no reader when there is none |
+| `devices` | `{devices, problems}` — the full list, every time; not a delta. `problems` says, per device kind, why none is ready |
 | `implementations` | `{needs}` — node types this runtime *cannot* bind, keyed to what each one wants |
 | `result` | `{id, lines, level?}` — the answer to one `command` |
 | `error` | `{message}` |
@@ -82,17 +82,29 @@ table, that `arm` raises:
 
 An empty object means everything binds, which is what the simulator sends.
 
-### Why there is no reader
+### Why a device is not ready
 
-`devices` carries `problem` when the list has no reader in it, as one sentence
-for a person: atrium not checked out, pyscard not installed in the runtime's
-Python (naming the interpreter), pcscd not answering, no reader attached, or
-only atrium's virtual reader visible. It is absent when a reader is there. An
-editor that predates it ignores it and shows the empty list it always did.
+`devices` carries `problems`, keyed by device kind, one sentence for a person
+for each kind that is not ready. A kind that is ready has no key, so `{}` means
+everything discovered is usable.
+
+- `pcsc`: atrium not checked out, pyscard not installed in the runtime's Python
+  (naming the interpreter), pcscd not answering, no reader attached, or only
+  atrium's virtual reader visible.
+- `simtrace2`: not Linux, no board on USB, or a board with no
+  `simtrace2-remsim` running for it (with the command that would start one).
+  A board appears in `devices` even without its daemon, so it can be picked
+  while the problem says what to start.
+
+An editor that predates it ignores it and shows the list it always did.
 
 ```json
-{ "type": "devices", "devices": [],
-  "problem": "pyscard is not installed in the Python running Plexus (/home/me/plexus/.venv/bin/python), so no PC/SC reader can be opened. …" }
+{ "type": "devices",
+  "devices": [{ "id": "simtrace2:1-2.3", "kind": "simtrace2", "name": "SimTrace2 (USB 1-2.3)",
+                "host": "", "available": true, "detail": "no simtrace2-remsim running" }],
+  "problems": {
+    "pcsc": "pyscard is not installed in the Python running Plexus (/home/me/plexus/.venv/bin/python), so no PC/SC reader can be opened. …",
+    "simtrace2": "The SimTrace2 at 1-2.3 is plugged in, but no simtrace2-remsim is running for it. …" } }
 ```
 
 An editor asks again with a `devices` frame of its own, so a reader plugged in

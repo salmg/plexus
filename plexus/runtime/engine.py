@@ -394,6 +394,10 @@ class Engine:
                     closer()
                 except Exception:  # pragma: no cover - shutdown is best effort
                     log.debug("transform close failed", exc_info=True)
+        # A terminal that waits on someone else — a SimTrace2 blocked reading
+        # what the real terminal sends next — never reaches a stop check by
+        # itself. Closing it is what lets its read return.
+        self._close_terminal()
 
         self._thread.join(timeout=timeout)
         if self._thread.is_alive():
@@ -545,6 +549,15 @@ class Engine:
             if self._telemetry.get(node_id, NodeTelemetry()).status != "error":
                 self._mark(node_id, status="ready")
 
+    def _close_terminal(self) -> None:
+        closer = getattr(self._terminal, "close", None)
+        if closer is None:
+            return
+        try:
+            closer()
+        except Exception:  # pragma: no cover - shutdown is best effort
+            log.debug("terminal close failed", exc_info=True)
+
     def _release(self) -> None:
         """Close everything that was opened, loudest-first, never raising."""
         for transform in self._transforms:
@@ -564,6 +577,9 @@ class Engine:
             except Exception:  # pragma: no cover
                 log.debug("card disconnect failed", exc_info=True)
         self._card = None
+        # A terminal can hold something open from bind (a SimTrace2 holds its
+        # vpcd socket), and a card that then failed to open leaves it here.
+        self._close_terminal()
         self._terminal = None
         self._chain = None
 
@@ -668,7 +684,7 @@ class Engine:
         """
         return discover_devices()
 
-    def discovery(self) -> Tuple[List[Any], str]:
+    def discovery(self) -> Tuple[List[Any], Dict[str, str]]:
         """`devices`, with the reason there are none; see `discover_hardware`."""
         return discover_hardware()
 
@@ -847,15 +863,16 @@ def node_requirements() -> Dict[str, str]:
     return out
 
 
-def discover_hardware() -> Tuple[List[Any], str]:
+def discover_hardware() -> Tuple[List[Any], Dict[str, str]]:
     """
-    The hardware this runtime can see right now, as graph `Device`s, and why
-    there is none when there is none.
+    The hardware this runtime can see right now, as graph `Device`s, and for
+    each kind it looks for, why there is none ready when there is none.
 
-    Today that is the PC/SC readers atrium reports, less its virtual reader
-    (see `ReaderDiscovery`). The reason is a sentence for a person and empty
-    when a reader is there: a missing pyscard or atrium checkout must not look
-    like a machine with nothing plugged in.
+    Two kinds today: the PC/SC readers atrium reports, less its virtual reader
+    (see `ReaderDiscovery`), and SimTrace2 boards with the daemon serving each
+    (see `SimTraceDiscovery`). A reason is a sentence for a person, keyed by
+    device kind and absent when that kind is ready: a missing pyscard or a
+    daemon nobody started must not look like a machine with nothing plugged in.
 
     Never raises. Discovery runs beside the editor; an exception here would be
     worse than an answer saying what is missing.
@@ -863,8 +880,11 @@ def discover_hardware() -> Tuple[List[Any], str]:
     from plexus.adapters import atrium as _atrium
     from plexus.graph import Device
 
-    found = _atrium.pcsc_discovery()
-    devices: List[Any] = [
+    devices: List[Any] = []
+    problems: Dict[str, str] = {}
+
+    readers = _atrium.pcsc_discovery()
+    devices += [
         Device(
             id="pcsc:%s" % reader["name"],
             kind="pcsc",
@@ -872,9 +892,35 @@ def discover_hardware() -> Tuple[List[Any], str]:
             available=True,
             detail=reader.get("kind") or None,
         )
-        for reader in found.readers
+        for reader in readers.readers
     ]
-    return devices, found.problem
+    if readers.problem:
+        problems["pcsc"] = readers.problem
+
+    boards = _atrium.simtrace_discovery()
+    for board in boards.boards:
+        daemon = board.get("daemon")
+        label = board.get("product") or "SimTrace2"
+        devices.append(
+            Device(
+                id="simtrace2:%s" % board["usb_path"],
+                kind="simtrace2",
+                name="%s (USB %s)" % (label, board["usb_path"]),
+                # Present is present: a board with no daemon yet is still the
+                # board, and the reason below says what to start. Marking it
+                # absent would make the checks say "plug it in".
+                available=True,
+                detail=(
+                    "simtrace2-remsim running, pid %s" % daemon.get("pid")
+                    if daemon
+                    else "no simtrace2-remsim running"
+                ),
+            )
+        )
+    if boards.problem:
+        problems["simtrace2"] = boards.problem
+
+    return devices, problems
 
 
 def discover_devices() -> List[Any]:

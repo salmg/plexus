@@ -28,11 +28,11 @@ export interface RuntimeHandlers {
   onApdu: (event: ApduEvent) => void;
   onLog: (line: LogLine) => void;
   /**
-   * The full device list, and why it is empty when it is: no pyscard in the
-   * runtime's Python, no atrium checkout, pcscd refusing. In the runtime's own
-   * words, which stay English like the rest of what it says.
+   * The full device list, and per device kind, why none is ready: no pyscard
+   * in the runtime's Python, pcscd refusing, a SimTrace2 with no daemon up. In
+   * the runtime's own words, which stay English like the rest of what it says.
    */
-  onDevices: (devices: Device[], problem?: string) => void;
+  onDevices: (devices: Device[], problems?: Record<string, string>) => void;
   /**
    * Node types this runtime cannot bind, and what each is waiting on.
    *

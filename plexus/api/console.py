@@ -127,12 +127,18 @@ def _edges(engine: Engine, graph: Optional[Graph], args) -> Result:
 
 
 def _devices(engine: Engine, graph: Optional[Graph], args) -> Result:
-    devices, problem = engine.discovery()
-    if not devices:
-        return ["No readers found.", problem or "Plug one in."], None
-    return [
+    devices, problems = engine.discovery()
+    lines = [
         "%-4s %-18s %s" % ("ok" if d.available else "gone", d.id, d.name) for d in devices
-    ], None
+    ]
+    if not devices:
+        lines = ["No devices found."]
+    # Each kind that is not ready says why, so a reader that is there does not
+    # hide a SimTrace2 whose daemon nobody started.
+    lines += ["%s: %s" % (kind, problem) for kind, problem in sorted(problems.items())]
+    if not devices and not problems:
+        lines.append("Plug one in.")
+    return lines, None
 
 
 def _apdu_from(args) -> Tuple[Optional[bytes], Optional[Result]]:
