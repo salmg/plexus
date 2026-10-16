@@ -5,15 +5,9 @@ phones, captures and mutations into a relay you can see, run, and reach into
 while it is running.
 
 Designed and provided by **[academy.salmg.net](https://academy.salmg.net)**.
-The manual is in [docs/](docs/README.md).
+The full manual is in [docs/](docs/README.md).
 
 ![The editor with the example rig loaded: nodes on the left, the checks on the right, the console beneath](docs/images/01-overview.png)
-
-It follows your system theme, and the toggle in the top bar overrides it. The
-light palette is a set of blues rather than a washed-out version of the dark
-one; both were measured against WCAG on every surface they use.
-
-![The same rig in light mode](docs/images/02-light-mode.png)
 
 > **Authorized use only.** For security research on cards, terminals and hosts
 > you own or have written permission to test. Same terms as atrium.
@@ -24,6 +18,139 @@ today a topology lives in a CLI flag soup (`--nfcgate --nfcgate-host … --reade
 the shape of. Plexus makes the rig the document.
 
 ---
+
+## Quick start
+
+You need **git**, **Python 3.8 or newer** and **Node.js 20.19+ or 22.12+**. Node
+is only used once, to build the editor; after that only Python runs. You do not
+need a reader, a phone or a card: the first rig below runs entirely on a
+laptop.
+
+**1. Clone it, with its submodule.** Atrium lives in `vendor/atrium`, which is
+why the flag is there.
+
+```bash
+git clone --recurse-submodules https://github.com/salmg/plexus
+cd plexus
+```
+
+If you already cloned without the flag: `git submodule update --init vendor/atrium`.
+
+**2. Install the runtime into a virtual environment.**
+
+```bash
+python -m venv .venv
+source .venv/bin/activate          # Windows PowerShell: .venv\Scripts\Activate.ps1
+pip install -e ".[runtime]"
+```
+
+**3. Start it.**
+
+```bash
+plexus up
+```
+
+The first time, this runs `npm install` and `npm run build:bundle` in `ui/`.
+That takes about a minute and is the only step that needs the network. Then it
+prints:
+
+```
+Plexus on http://127.0.0.1:8900/
+The editor and the runtime are both here. Ctrl-C to stop.
+```
+
+and opens your browser there. Opening the page arms nothing; **Run** is the
+only thing that does.
+
+**4. Check what is answering.** The top bar shows the runtime's address,
+`127.0.0.1:8900/ws`. If it says **simulated** instead, you are looking at the
+editor's built-in simulator, not a runtime that can bind a card. Nodes marked
+with a dot in the palette need hardware or a daemon this machine does not have;
+they can be drawn and checked here, and refuse when armed.
+
+![A blank canvas under plexus up: the palette on the left, the runtime's address in the top bar](docs/images/09-new-canvas.png)
+
+### Your first run, in a minute
+
+The editor opens on an example relay to a phone, which names hardware a laptop
+does not have. To run something real instead:
+
+1. Press **Open** and pick `examples/probe-a-capture.plexus.yaml`. Plexus lists
+   what the graph will claim, dial, and read or write before it loads anything.
+   Press **Load**.
+2. The checks panel says *Nothing to fix. This graph is ready to arm.* Press
+   **Run**.
+3. A fingerprint probe asks, a recorded capture answers, and atrium's mutation
+   engine rewrites one tag between them. The node counters climb, the edges
+   turn green, and the trace scrolls in the console.
+4. Click into the console and type `status`, then `tx 00B2010C00`. That APDU
+   crosses the same chain, so the last two lines show what the card said
+   (`…5F3401`**`01`**`…`) and what the terminal was told
+   (`…5F3401`**`07`**`…`).
+5. Press **Stop** to release the capture.
+
+![The probe rig running under plexus up: status and a hand-sent tx in the console, the rewrite marked "mutated by mutation-1"](docs/images/10-live-console.png)
+
+To build that rig yourself from an empty canvas, follow
+[Your first rig](docs/first-run.md).
+
+### Other ways to run it
+
+| You want | Run | Needs |
+| --- | --- | --- |
+| The editor and a real runtime | `plexus up` | Python, and Node once |
+| Only the editor, on its simulator, reloading as you edit it | `cd ui`, `npm install`, `npm run dev`, then open <http://localhost:5173> | Node |
+| That dev server with a real runtime behind it | `plexus serve` in a second terminal, then open the URL it prints | Python and Node |
+| Only the command line: check, show and run graph files | `pip install -e .`, then `plexus check <file>` | Python |
+| The tests | `pip install -e ".[dev]"`, then `pytest` | Python |
+
+`plexus up` takes `--port`, `--no-open` to skip the browser, and `--no-build`
+to never run npm (it prints what to run instead). It binds loopback. Binding
+any other address refuses to start without `PLEXUS_API_TOKEN` set, because an
+open control plane for a card relay is not something to leave to a warning
+nobody reads.
+
+[Install](docs/install.md) has the detail behind each of these.
+
+### If it does not start
+
+- **`vendor/atrium` is empty, or the runtime cannot find atrium.** The clone
+  skipped the submodule: `git submodule update --init vendor/atrium`. If your
+  atrium checkout lives elsewhere, set `PLEXUS_ATRIUM=/path/to/atrium`.
+- **`No editor to serve.`** npm is not on your PATH, or you passed
+  `--no-build`. Install Node, or build once by hand:
+  `cd ui && npm install && npm run build:bundle`.
+- **The port is taken.** `plexus up --port 8901`.
+- **A graph cannot find its capture or trace file.** Paths in a graph resolve
+  inside the workspace, which is the directory you started `plexus` in. Start
+  it from the repository root, or widen it with `PLEXUS_WORKSPACE`.
+- **Windows, Git Bash says `Permission denied` running Python.** That is the
+  Microsoft Store Python, which Git Bash cannot execute. Use PowerShell, or a
+  python.org install.
+
+More in [When it goes wrong](docs/troubleshooting.md).
+
+---
+
+## How it works
+
+A graph is a chain that runs left to right: something that **asks** (a
+terminal), any number of **transforms**, then something that **answers** (a
+card).
+
+1. **Draw** it. Drag or click nodes from the palette, wire a port that asks to
+   a port that answers, and set each node's fields in the inspector. A wire
+   that cannot work refuses to land and says why. See
+   [An edge is a conversation](#an-edge-is-a-conversation).
+2. **Check** it. The editor and the runtime apply the same rules, and a graph
+   that fails them will not arm. See
+   [What it checks before it will arm](#what-it-checks-before-it-will-arm).
+3. **Run** it. Run binds what the graph names, drives the conversation, and
+   streams every APDU into the console, with what each transform changed.
+4. **Reach into** it. The console talks to the live process: send an APDU,
+   pause, list the nodes. See [The console](#the-console).
+5. **Save** it. A `.plexus.yaml` is the source of truth; the CLI reads the same
+   file. See [From the command line](#from-the-command-line).
 
 ## An edge is a conversation
 
@@ -121,6 +248,14 @@ position atrium takes: the operating system already decides who can open a
 local socket. Binding anywhere else refuses to start without
 `PLEXUS_API_TOKEN`.
 
+## Light and dark
+
+It follows your system theme, and the toggle in the top bar overrides it. The
+light palette is a set of blues rather than a washed-out version of the dark
+one; both were measured against WCAG on every surface they use.
+
+![The same rig in light mode](docs/images/02-light-mode.png)
+
 ## English and Spanish
 
 Pick a language in the top bar; it is remembered, and a first visit follows the
@@ -137,7 +272,7 @@ Adding a third language is one file and no framework. See
 
 ## The console
 
-Dark mode is not a colour scheme, it is the working mode: the canvas dims and a
+Dark mode is not a color scheme, it is the working mode: the canvas dims and a
 real terminal sits under it. Its palette comes from
 [academy.salmg.net](https://academy.salmg.net)'s own, a deep blue-slate ground
 rather than black, so the two read as one operation. During a relay the useful
@@ -152,46 +287,18 @@ nfcgate-1                1284 apdu    34.8 ms
 plexus> pause
 ```
 
-The same console works against the simulator and against a card, because both
-answer the same protocol.
+`help` lists the rest: `status`, `nodes`, `edges`, `devices`, `pause`,
+`resume`, `check`. The same console works against the simulator and against a
+card, because both answer the same protocol.
 
 ![A running graph: the live APDU trace beneath the canvas, Stop armed in the top bar](docs/images/08-running.png)
 
 ---
 
-## Running it
+## From the command line
 
-```bash
-git clone --recurse-submodules https://github.com/salmg/plexus
-cd plexus
-pip install -e ".[runtime]"
-plexus up
-```
-
-That builds the editor the first time (a minute, and the only step that needs
-the network), then serves the editor and the runtime together on
-http://127.0.0.1:8900/ and opens a browser there. An example rig is loaded so
-there is something to read.
-
-The top bar always says which runtime is answering, so a simulated result is
-never mistaken for a card. Here it shows the runtime's address, the Run button
-arms the graph for real, and the console reaches into it:
-
-```
-plexus> tx 00B2010C00
--> 00B2010C00
-<- 70145A0854133300123456785F24032512315F3401019000
-```
-
-It binds loopback. Binding anywhere else refuses to start without
-`PLEXUS_API_TOKEN` set. An open control plane for a card relay is not
-something to leave to a warning nobody reads.
-
-The editor also runs alone, on a simulated runtime with no Python and no
-atrium: `cd ui && npm run dev`, and `plexus serve` when you want a real
-runtime behind it. See [Install](docs/install.md).
-
-The graph model and the checks also run headless, with only PyYAML installed:
+The graph model and the checks run headless, with only PyYAML installed: no
+Node, no browser, no editor.
 
 ```bash
 pip install -e .
@@ -213,8 +320,8 @@ contactless relay to a phone
   42 ms each way, 84 ms out and back.
 ```
 
-And `run` arms the graph for real. One rig needs nothing at all: a fingerprint
-probe asking, a recorded capture answering, a mutation node between them:
+And `run` arms the graph for real. It needs the submodule checked out, and the
+same rig as the first run above needs nothing else:
 
 ```bash
 plexus run examples/probe-a-capture.plexus.yaml
@@ -244,13 +351,6 @@ prove by running it. *Nothing to fix, this graph is ready to arm*:
 
 ![A rig that will run with no hardware in it](docs/images/07-runnable-rig.png)
 
-Tests:
-
-```bash
-pip install -e ".[dev]"
-pytest
-```
-
 ## Layout
 
 ```
@@ -260,6 +360,7 @@ ui/                     the editor (React, @xyflow/react, xterm.js)
   src/runtime/          mock runtime, WebSocket runtime
   src/canvas/           React Flow canvas and the node card
   src/panels/           palette, inspector, console
+  scripts/              catalogue export, and the screenshots in docs/images
 plexus/                 the runtime (Python)
   graph.py              the model again, and the same checks
   catalogue.py          reads the catalogue below, wherever it is installed
@@ -268,12 +369,17 @@ plexus/                 the runtime (Python)
   nodes/                card / terminal / transform implementations
   adapters/             the only place that imports atrium
   api/                  the WebSocket server (PROTOCOL.md)
-  cli.py                check, show, run, serve, nodes
+  cli.py                check, show, run, up, serve, nodes
 examples/               rigs you can open and one you can run
 tests/                  the model, and the engine end to end
 vendor/atrium/          submodule, never edited
 PROTOCOL.md             the WebSocket contract between the two
 ```
+
+The screenshots regenerate from `ui/`: `npm run screenshots` captures the
+simulator shots, and with `plexus up --no-open` running from the repository
+root, `node scripts/screenshots.mjs --live http://127.0.0.1:8900/` captures the
+two of the real runtime.
 
 ### One catalogue, two readers
 

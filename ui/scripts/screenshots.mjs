@@ -19,17 +19,29 @@
  *
  *   npm run screenshots                     # builds, then captures
  *   node scripts/screenshots.mjs --keep     # leave Chrome up to poke at
+ *
+ * The shots above are of the simulator, because a `file://` page has no
+ * runtime. The README also shows the editor in front of a real one, so those
+ * shots need `plexus up` running first, started from the repository root so
+ * the capture path below resolves inside its workspace:
+ *
+ *   plexus up --no-open                                    # in one terminal
+ *   node scripts/screenshots.mjs --live http://127.0.0.1:8900/
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, "../../docs/images");
 const BUILT = resolve(HERE, "../dist-docs/index.html");
-const APP = process.env.PLEXUS_APP ?? `file:///${BUILT.replace(/\\/g, "/")}`;
+const LIVE = (() => {
+  const at = process.argv.indexOf("--live");
+  return at === -1 ? null : process.argv[at + 1] ?? "http://127.0.0.1:8900/";
+})();
+const APP = LIVE ?? process.env.PLEXUS_APP ?? `file:///${BUILT.replace(/\\/g, "/")}`;
 const PORT = 9333;
 const VIEWPORT = { width: 1440, height: 900 };
 
@@ -109,6 +121,13 @@ const HELPERS = `
       window.__shot.byText(".btn", "Run", "Ejecutar")?.click();
       await new Promise((r) => setTimeout(r, 2800));
     },
+    async clearGraph() {
+      window.__shot.byText(".btn", "New", "Nuevo")?.click();
+      await new Promise((r) => setTimeout(r, 700));
+    },
+    focusConsole() {
+      document.querySelector(".console__term textarea")?.focus();
+    },
   };
 `;
 
@@ -170,6 +189,21 @@ class Session {
 
     await this.evaluate(HELPERS);
     await sleep(1200); // the graph fits on a timer; the terminal wants a frame
+  }
+
+  /** Type a console command the way a person would: keystrokes, then Enter. */
+  async command(text) {
+    await this.evaluate("__shot.focusConsole();");
+    await this.send("Input.insertText", { text });
+    await this.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+      text: "\r",
+    });
+    await this.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter" });
+    await sleep(900);
   }
 
   async shot(name) {
@@ -267,6 +301,33 @@ edges:
 
 const yamlLiteral = (text) => JSON.stringify(text);
 
+/**
+ * The editor in front of the runtime `plexus up` serves. Same clicking and
+ * typing as the rest; the difference is that Run here binds a real capture and
+ * drives it through atrium's mutation engine, and the console answers from
+ * the runtime rather than the simulator.
+ */
+async function liveShots(session) {
+  await session.evaluate(`await __shot.theme("dark"); await __shot.locale("en");`);
+
+  // 9 — a blank canvas: the palette, the hint, and the runtime's address in
+  //     the top bar where the simulator would say "simulated".
+  await session.evaluate(`await __shot.clearGraph();`);
+  await session.shot("09-new-canvas");
+
+  // 10 — the rig that needs no hardware, run for real, then reached into.
+  //      The file the README tells a reader to open, not a copy of it.
+  const example = readFileSync(resolve(HERE, "../../examples/probe-a-capture.plexus.yaml"), "utf8");
+  await session.evaluate(`
+    await __shot.loadYaml("probe-a-capture.plexus.yaml", ${yamlLiteral(example)});
+    await __shot.confirmLoad();
+    await __shot.run();
+  `);
+  await session.command("status");
+  await session.command("tx 00B2010C00");
+  await session.shot("10-live-console");
+}
+
 async function main() {
   mkdirSync(OUT, { recursive: true });
 
@@ -303,6 +364,12 @@ async function main() {
     console.log(`capturing into ${OUT}`);
 
     await session.open(APP);
+
+    if (LIVE) {
+      await liveShots(session);
+      console.log("done");
+      return;
+    }
 
     // 1 — the editor as it opens: the example rig, dark, English.
     await session.evaluate(`await __shot.theme("dark"); await __shot.locale("en");`);
