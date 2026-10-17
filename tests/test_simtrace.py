@@ -141,7 +141,9 @@ def test_atriums_own_module_loads_on_its_own():
     module = adapter._simtrace_module()
     assert isinstance(module.list_devices()["devices"], list)
     assert isinstance(module.find_remsim_processes(), list)
-    assert "simtrace2-remsim" in module.simtrace_command("1-2.3")["command"]
+    # No USB path: atrium refuses a path naming a board that is not plugged
+    # in, and CI has none. The adapter only ever asks for one it just found.
+    assert "simtrace2-remsim" in module.simtrace_command()["command"]
 
 
 # ── what the editor is told ─────────────────────────────────────────────────

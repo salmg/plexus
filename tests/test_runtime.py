@@ -437,10 +437,15 @@ def test_an_unimplemented_terminal_names_its_daemon_at_build_time():
     thread, after `arm` had reported "running" and opened the card. Refused
     where the card side has always refused it: at bind, before anything is
     claimed.
+
+    The ACR122U target, not the SimTrace2 this first used: the SimTrace2 is
+    implemented now, and what it says at bind depends on the machine (no
+    board, no daemon, not Linux), which tests/test_simtrace.py pins.
     """
     with pytest.raises(terminal_nodes.TerminalUnavailable) as caught:
-        terminal_nodes.build("simtrace2", {})
-    assert "simtrace2-remsim" in str(caught.value)
+        terminal_nodes.build("acr122u.target", {})
+    assert "not implemented" in str(caught.value)
+    assert "PN532 emulator" in str(caught.value)
 
 
 def test_a_terminal_this_build_cannot_drive_opens_no_card():
