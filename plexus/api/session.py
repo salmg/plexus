@@ -313,6 +313,8 @@ class Session:
             await self._stop()
         elif kind == "command":
             await self._command(message)
+        elif kind == "devices":
+            await self._refresh_devices()
         else:
             await self._deliver({"type": "error", "message": "Unknown frame %r." % kind})
 
@@ -357,11 +359,28 @@ class Session:
         A `Device` is a frozen dataclass whose fields are exactly the frame the
         editor's Inspector reads — id, kind, name, host, available, detail — so
         `asdict` is the whole translation.
+
+        `problems` says, per device kind, why none is ready: no pyscard in this
+        Python, no atrium checkout, pcscd refusing, a SimTrace2 with no daemon.
+        Without it a picker on a machine whose reader `pcsc_scan` lists said
+        only that nothing was there, which was true of the runtime and false of
+        the machine.
         """
+        devices, problems = self.engine.discovery()
         return {
             "type": "devices",
-            "devices": [dataclasses.asdict(d) for d in self.engine.devices()],
+            "devices": [dataclasses.asdict(d) for d in devices],
+            "problems": problems,
         }
+
+    async def _refresh_devices(self) -> None:
+        """
+        Look again, on the editor's say-so: a reader plugged in, or pyscard
+        installed, after the page connected. `implementations` comes too,
+        because whether the pcsc node can bind moves with the same answer.
+        """
+        await self._deliver(self._devices_frame())
+        await self._deliver({"type": "implementations", "needs": node_requirements()})
 
     async def _arm(self, message: Dict[str, Any]) -> None:
         raw = message.get("graph")

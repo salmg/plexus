@@ -366,6 +366,14 @@ def _nodes() -> int:
         "\n· needs hardware or a daemon this build cannot start; "
         "the rest run anywhere."
     )
+    # The dots that are about this machine rather than this build, so the ones
+    # worth a sentence: which piece of the stack is missing.
+    from plexus.runtime import discover_hardware
+
+    _devices, problems = discover_hardware()
+    for kind, problem in sorted(problems.items()):
+        if ready.get(kind) != "ready":
+            print("\n%s: %s" % (kind, problem))
     return 0
 
 

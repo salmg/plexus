@@ -38,6 +38,7 @@ bound node) so the editor can catch up without a restart.
 | `arm` | `{graph}` | Bind the hardware this graph names and start |
 | `stop` | `{}` | Release everything and stop |
 | `command` | `{id, line}` | One console line; `id` is echoed back on `result` |
+| `devices` | `{}` | Look for hardware again; answered with `devices` then `implementations` |
 
 `graph` is the same object the editor saves as `.plexus.yaml`, as JSON.
 `plexus.graph.Graph` reads it.
@@ -55,7 +56,7 @@ over a socket is untrusted input that names hardware and dials addresses.
 | `edge` | `{id, telemetry}` — partial `{apdus, lastMs, bytesOut, bytesIn}` |
 | `apdu` | `{event}` — `{seq, t, edge, dir, hex, ms?, mutatedBy?, note?}` |
 | `log` | `{line}` — `{t, level, source, text}` |
-| `devices` | `{devices}` — the full list, every time; not a delta |
+| `devices` | `{devices, problems}` — the full list, every time; not a delta. `problems` says, per device kind, why none is ready |
 | `implementations` | `{needs}` — node types this runtime *cannot* bind, keyed to what each one wants |
 | `result` | `{id, lines, level?}` — the answer to one `command` |
 | `error` | `{message}` |
@@ -66,18 +67,49 @@ with no separators.
 
 ### What a runtime cannot bind
 
-`implementations` is sent once, in the reply to `hello`. A key present in
+`implementations` is sent in the reply to `hello`, and again after each
+`devices` request, because whether `pcsc` binds depends on the reader and
+pyscard the machine has now. A key present in
 `needs` is a node type this runtime has no implementation for, and the value
 is the sentence it would refuse with — the same sentence, from the same
 table, that `arm` raises:
 
 ```json
 { "type": "implementations",
-  "needs": { "pcsc": "pyscard and a reader attached to this machine",
+  "needs": { "pcsc": "pyscard in this Python (pip install -e \".[hardware]\")",
              "nfcgate": "atrium's NFCGate transport and a reachable server" } }
 ```
 
 An empty object means everything binds, which is what the simulator sends.
+
+### Why a device is not ready
+
+`devices` carries `problems`, keyed by device kind, one sentence for a person
+for each kind that is not ready. A kind that is ready has no key, so `{}` means
+everything discovered is usable.
+
+- `pcsc`: atrium not checked out, pyscard not installed in the runtime's Python
+  (naming the interpreter), pcscd not answering, no reader attached, or only
+  atrium's virtual reader visible.
+- `simtrace2`: not Linux, no board on USB, or a board with no
+  `simtrace2-remsim` running for it (with the command that would start one).
+  A board appears in `devices` even without its daemon, so it can be picked
+  while the problem says what to start.
+
+An editor that predates it ignores it and shows the list it always did.
+
+```json
+{ "type": "devices",
+  "devices": [{ "id": "simtrace2:1-2.3", "kind": "simtrace2", "name": "SimTrace2 (USB 1-2.3)",
+                "host": "", "available": true, "detail": "no simtrace2-remsim running" }],
+  "problems": {
+    "pcsc": "pyscard is not installed in the Python running Plexus (/home/me/plexus/.venv/bin/python), so no PC/SC reader can be opened. …",
+    "simtrace2": "The SimTrace2 at 1-2.3 is plugged in, but no simtrace2-remsim is running for it. …" } }
+```
+
+An editor asks again with a `devices` frame of its own, so a reader plugged in
+after the page connected shows up without a reload. A runtime that predates it
+answers `error` ("Unknown frame"), which changes nothing else.
 The editor greys those nodes in the palette and refuses to arm a graph that
 uses one, so a rig that cannot run says so before it opens a reader instead
 of after.

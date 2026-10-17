@@ -154,20 +154,40 @@ a model is configured.
 
 **This is the honest part of this page.** The engine binds, drives, rewrites,
 reports and releases. The cards it can bind today are a recorded capture and a
-contact card in a **PC/SC reader**; the terminals are the fingerprint probe and
-the EMV agent, the agent only once a model back end is configured
-(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or a local `ATRIUM_LLM_BASE_URL`).
+contact card in a **PC/SC reader**; the terminals are the fingerprint probe,
+the EMV agent (once a model back end is configured: `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, or a local `ATRIUM_LLM_BASE_URL`), and a real payment
+terminal through a **SimTrace2**.
 
-The PC/SC reader is discovered live: plug one in and it appears in the editor's
-reader picker, `plexus nodes` stops marking `pcsc` with a dot, and `/api/health`
-reports it `ready`. It needs pyscard, which is the `hardware` extra:
+The SimTrace2 is found the way atrium's dashboard finds it: the board by its
+USB id (1d50:60e3) in `/sys`, the `simtrace2-remsim` serving it in `/proc`.
+Neither is started by Plexus. When the board is there and the daemon is not, the
+picker prints the exact command for that board, and Run is refused until it is
+up (or until "Refuse to start if the daemon is not already up" is switched
+off). Binding then connects atrium's `VirtualCard` to vpcd, and every command
+the terminal sends goes through the chain. What is tested without the board:
+everything from vpcd inwards, against a stand-in vpcd speaking vpcd's framing.
+What still needs a rig: the board, the daemon and a real terminal.
+
+The PC/SC reader is discovered when the editor connects, and again whenever
+you press **Look again** under the reader picker: plug one in, press it, and the
+reader appears, `plexus nodes` stops marking `pcsc` with a dot, and
+`/api/health` reports it `ready`. It needs pyscard, which is the `hardware`
+extra, installed into the same Python that runs Plexus. On Linux pyscard builds
+from source, so the PC/SC headers and swig come first:
 
 ```bash
+sudo apt install pcscd libpcsclite-dev swig python3-dev   # Linux only
 pip install -e ".[hardware]"
 ```
 
-On a machine with no reader — or no pyscard — `pcsc` is `pending` again and says
-so, exactly like the nodes that have no implementation at all.
+On a machine with no reader, or no pyscard, `pcsc` is `pending` again and says
+which: the picker, `devices` in the console and `plexus nodes` all print the
+same sentence. The cases it tells apart are atrium not checked out, pyscard not
+in this Python (naming the interpreter), pcscd not answering, no reader at all,
+and only atrium's virtual reader (`Virtual PCD`) visible. The virtual reader is
+never offered as a card slot, because it is where atrium presents a card to a
+terminal.
 
 Every other hardware node **resolves in a graph and refuses at bind time, naming
 what it needs**:
@@ -196,7 +216,7 @@ than design work:
 | Remote card | `transport.remote.RemoteCardTransport` |
 | ACR122U target | `nfc.emulator` — the PN532 in target mode |
 | Virtual reader | `virtual_card.VirtualCard` + `relay_os.RelayOS` |
-| SimTrace2 | the `simtrace2-remsim` daemon, discovered not launched |
+| SimTrace2 | `api/routes/simtrace.py` discovery + `virtual_card.VirtualCard` — **done**, rig run owed |
 
 `CardTransport` is `connect` / `get_atr` / `transmit` / `disconnect`, which is
 exactly what a card-side node has to be. The four transports above are
@@ -211,8 +231,9 @@ def devices(self) -> List[Any]:
     return discover_devices()
 ```
 
-`discover_devices` asks `plexus.adapters.atrium.pcsc_readers`, the one place
-atrium's `core.readers` is reached. Add a transport by giving discovery the
+`discover_devices` asks `plexus.adapters.atrium.pcsc_discovery`, the one place
+atrium's `core.readers` is reached, and `discover_hardware` returns the same
+list with the reason it is empty. Add a transport by giving discovery the
 kind it reports and writing the node beside `PcscCard`.
 
 Everything in `plexus/adapters/` is the only place that imports atrium. When

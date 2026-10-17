@@ -148,6 +148,9 @@ export const en = {
   "field.chooseDevice": "Choose a device",
   "field.notPresent": "{name} — not present",
   "field.noDevices": "No {kind} device is visible to the runtime.",
+  "field.notBuilt":
+    "This runtime does not list {kind} devices: the node is not built yet. It needs {needs}.",
+  "field.lookAgain": "Look again",
   "field.hexOnly": "Hex digits only.",
 
   // ── Console ──────────────────────────────────────────────────────────

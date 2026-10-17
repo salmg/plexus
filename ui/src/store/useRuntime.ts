@@ -158,6 +158,7 @@ interface RuntimeState {
   run: (graph: PlexusGraph) => Promise<void>;
   stop: () => Promise<void>;
   send: (line: string) => Promise<ConsoleResult>;
+  refreshDevices: () => void;
   clearTrace: () => void;
 }
 
@@ -216,7 +217,8 @@ export const useRuntime = create<RuntimeState>((set, get) => ({
           logTotal: s.logTotal + 1,
         })),
 
-      onDevices: (devices: Device[]) => useGraph.getState().setDevices(devices),
+      onDevices: (devices: Device[], problems?: Record<string, string>) =>
+        useGraph.getState().setDevices(devices, problems),
 
       onUnavailable: (needs) => set({ unavailable: needs }),
     });
@@ -256,6 +258,8 @@ export const useRuntime = create<RuntimeState>((set, get) => ({
   },
 
   send: (line) => get().runtime.command(line),
+
+  refreshDevices: () => get().runtime.refreshDevices(),
 
   clearTrace: () => set({ apdus: [], logs: [], apduTotal: 0, logTotal: 0 }),
 }));

@@ -35,6 +35,8 @@ cd plexus
 ```
 
 If you already cloned without the flag: `git submodule update --init vendor/atrium`.
+GitHub's **Download ZIP** never includes submodules, so a ZIP copy has an
+empty `vendor/atrium` too; clone instead.
 
 **2. Install the runtime into a virtual environment.**
 
@@ -94,6 +96,70 @@ does not have. To run something real instead:
 To build that rig yourself from an empty canvas, follow
 [Your first rig](docs/first-run.md).
 
+### Using a card reader
+
+The quick start leaves out the reader libraries on purpose, so a machine with
+no reader needs no compiler. To bind a contact card in a PC/SC reader (an SCM
+SCR3310, an Identiv, a Gemalto), add them:
+
+**1. The PC/SC service and headers.** On Linux, pyscard builds from source, so
+it needs these before pip can install it:
+
+```bash
+sudo apt install pcscd libpcsclite-dev swig python3-dev
+```
+
+On Windows and macOS the PC/SC service is built in, and pip usually finds a
+ready-made pyscard.
+
+**2. pyscard, into the same virtual environment as Plexus.** With `.venv`
+active:
+
+```bash
+pip install -e ".[hardware]"
+```
+
+Installing it into another Python is the usual way to have pyscard and still
+see no reader; the editor names the Python it is looking in.
+
+**3. Restart `plexus up`**, add a **PC/SC reader** node from **Card side**, and
+pick the reader in the inspector. If you plugged the reader in or installed
+pyscard while the page was open, press **Look again** under the picker.
+
+When the picker is empty it says why, in the runtime's words: atrium missing,
+pyscard missing (and in which Python), pcscd not answering, or only atrium's
+virtual reader (`Virtual PCD`, from vpcd) visible, which is never offered
+because it is where atrium presents a card, not where one sits. `devices` in
+the console and `plexus nodes` print the same sentence.
+
+### Using a SimTrace2
+
+A SimTrace2 puts a real payment terminal on the left of the chain: the board
+sits in the terminal's card slot, and every command the terminal sends comes
+through Plexus to whatever card the chain ends in, such as the PC/SC reader
+above. It runs on Linux, and it needs three things Plexus checks for but never
+starts:
+
+1. **vpcd**, from the `virtualsmartcard` package, loaded into pcscd. `pcsc_scan`
+   then lists `Virtual PCD 00 00`: that is where the terminal's commands arrive.
+2. **The board on USB.** Under a VM, give the VM the USB device.
+3. **simtrace2-remsim, running for the board, in a root shell.** It needs raw
+   USB, so Plexus never launches it. The inspector prints the exact command for
+   your board when the daemon is not up.
+
+Then draw **SimTrace2 → (any transforms) → PC/SC reader**, pick the board and
+the reader in the inspector, and press **Run**. Stop atrium's own relay first if
+it is running: only one program at a time can answer vpcd. The picker, `devices`
+in the console and `plexus nodes` say which of the three is missing.
+
+A power cycle from the terminal is not passed on to the card, which stays open
+for the whole run. See the caveats on the node, and
+[Running on hardware](docs/hardware.md).
+
+The ACR122U and virtual reader nodes can be drawn and checked, but their
+pickers stay empty: they are not built yet, and the inspector says what each
+one needs.
+
 ### Other ways to run it
 
 | You want | Run | Needs |
@@ -121,6 +187,10 @@ nobody reads.
   `--no-build`. Install Node, or build once by hand:
   `cd ui && npm install && npm run build:bundle`.
 - **The port is taken.** `plexus up --port 8901`.
+- **`pcsc_scan` sees the reader and Plexus does not.** Read the sentence under
+  the empty picker, or run `plexus nodes`. It is almost always pyscard missing
+  from the Python that runs Plexus; see
+  [Using a card reader](#using-a-card-reader).
 - **A graph cannot find its capture or trace file.** Paths in a graph resolve
   inside the workspace, which is the directory you started `plexus` in. Start
   it from the repository root, or widen it with `PLEXUS_WORKSPACE`.
@@ -412,12 +482,15 @@ Being straight about the line:
 - **The hardware nodes.** The engine binds, drives, rewrites, reports and
   releases. The cards it binds today are a recorded capture and a contact card
   in a **PC/SC reader** (`pip install -e ".[hardware]"`, then plug one in; it
-  is discovered live and appears in the editor's reader picker); the only
-  terminal is the fingerprint probe. The ACR122U in either mode, NFCGate, the
-  card proxy, SimTrace2 and vpcd all resolve, and all refuse at bind time
-  naming what they need. They are adapter work against seams that already exist
-  in atrium (PC/SC is the worked example of that work), and they need the rig
-  to be worth writing.
+  is discovered and appears in the editor's reader picker). The terminals are
+  the fingerprint probe, the EMV agent, and a real terminal through a
+  **SimTrace2** (see [Using a SimTrace2](#using-a-simtrace2)); the SimTrace2
+  relay is tested from vpcd inwards, and the board and daemon half has still to
+  be run on a rig. The ACR122U in either mode, NFCGate, the card proxy and vpcd
+  all resolve, and all refuse at bind time naming what they need. They are
+  adapter work against seams that already exist in atrium (PC/SC and SimTrace2
+  are the worked examples of that work), and they need the rig to be worth
+  writing.
 - **Host-layer nodes.** ISO 8583 is a second channel in the model (`iso8583`)
   with no nodes on it yet. The interesting one is a DE55 bridge, where the two
   halves atrium describes actually meet.

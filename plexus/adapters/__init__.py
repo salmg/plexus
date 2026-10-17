@@ -12,18 +12,28 @@ that is never edited, so when it moves, the things that break are in here.
 
 from plexus.adapters.atrium import (  # noqa: F401
     AtriumUnavailable,
+    ReaderDiscovery,
+    SimTraceDiscovery,
     load_mutation_engine,
     load_recorded_card,
     open_local_card,
+    open_virtual_card,
+    pcsc_discovery,
     pcsc_readers,
     require_atrium,
+    simtrace_discovery,
 )
 
 __all__ = [
     "AtriumUnavailable",
+    "ReaderDiscovery",
+    "SimTraceDiscovery",
     "load_mutation_engine",
     "load_recorded_card",
     "open_local_card",
+    "open_virtual_card",
+    "pcsc_discovery",
     "pcsc_readers",
+    "simtrace_discovery",
     "require_atrium",
 ]
