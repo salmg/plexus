@@ -134,7 +134,7 @@ def _devices(engine: Engine, graph: Optional[Graph], args) -> Result:
     if not devices:
         lines = ["No devices found."]
     # Each kind that is not ready says why, so a reader that is there does not
-    # hide a SimTrace2 whose daemon nobody started.
+    # hide a SimTrace2 that is missing.
     lines += ["%s: %s" % (kind, problem) for kind, problem in sorted(problems.items())]
     if not devices and not problems:
         lines.append("Plug one in.")

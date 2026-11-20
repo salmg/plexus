@@ -198,6 +198,7 @@ class Engine:
             "info",
             "Armed %d nodes: %s" % (len(steps), " -> ".join(n.id for n in steps)),
         )
+        self._announce_armed(steps[0].id)
         self._set_state("running")
 
         self._stop.clear()
@@ -346,6 +347,28 @@ class Engine:
                 "The terminal finished after %d exchanges. The card is still bound — "
                 "send APDUs with tx, or stop to release it." % exchanges,
             )
+
+    def _announce_armed(self, source: str) -> None:
+        """
+        Let the terminal speak once everything is bound, if it has a word.
+
+        Optional, like `summary`. A SimTrace2 needs it: the daemon that feeds
+        it can only be started once the graph is armed, so "start it now, with
+        this command" belongs at exactly this moment and on the console the
+        operator is looking at. The `say` it is handed stays valid for the run,
+        so a terminal can also report from the relay thread.
+        """
+        armed = getattr(self._terminal, "armed", None)
+        if armed is None:
+            return
+
+        def say(level: str, text: str) -> None:
+            self._log(level, text, source)
+
+        try:
+            armed(say)
+        except Exception:  # pragma: no cover - an announcement is not the run
+            log.debug("terminal armed hook failed", exc_info=True)
 
     def _terminal_summary(self) -> List[str]:
         summarise = getattr(self._terminal, "summary", None)
@@ -872,7 +895,8 @@ def discover_hardware() -> Tuple[List[Any], Dict[str, str]]:
     (see `ReaderDiscovery`), and SimTrace2 boards with the daemon serving each
     (see `SimTraceDiscovery`). A reason is a sentence for a person, keyed by
     device kind and absent when that kind is ready: a missing pyscard or a
-    daemon nobody started must not look like a machine with nothing plugged in.
+    missing atrium checkout must not look like a machine with nothing plugged
+    in. A board whose daemon is not up is ready: the daemon starts after Run.
 
     Never raises. Discovery runs beside the editor; an exception here would be
     worse than an answer saying what is missing.
@@ -906,14 +930,15 @@ def discover_hardware() -> Tuple[List[Any], Dict[str, str]]:
                 id="simtrace2:%s" % board["usb_path"],
                 kind="simtrace2",
                 name="%s (USB %s)" % (label, board["usb_path"]),
-                # Present is present: a board with no daemon yet is still the
-                # board, and the reason below says what to start. Marking it
-                # absent would make the checks say "plug it in".
+                # Present is present: a board with no daemon yet is the board
+                # in the state to press Run in. The daemon command is printed
+                # on the console once the graph is armed, the first moment it
+                # can work.
                 available=True,
                 detail=(
                     "simtrace2-remsim running, pid %s" % daemon.get("pid")
                     if daemon
-                    else "no simtrace2-remsim running"
+                    else "simtrace2-remsim starts after Run"
                 ),
             )
         )

@@ -91,20 +91,19 @@ everything discovered is usable.
 - `pcsc`: atrium not checked out, pyscard not installed in the runtime's Python
   (naming the interpreter), pcscd not answering, no reader attached, or only
   atrium's virtual reader visible.
-- `simtrace2`: not Linux, no board on USB, or a board with no
-  `simtrace2-remsim` running for it (with the command that would start one).
-  A board appears in `devices` even without its daemon, so it can be picked
-  while the problem says what to start.
+- `simtrace2`: not Linux, no atrium checkout, or no board on USB. A board
+  with no `simtrace2-remsim` running is **not** a problem: that is the state
+  to arm in, because the daemon can only start once the graph is armed (see
+  [Armed, then the daemon](#armed-then-the-daemon)). Its `detail` says so.
 
 An editor that predates it ignores it and shows the list it always did.
 
 ```json
 { "type": "devices",
   "devices": [{ "id": "simtrace2:1-2.3", "kind": "simtrace2", "name": "SimTrace2 (USB 1-2.3)",
-                "host": "", "available": true, "detail": "no simtrace2-remsim running" }],
+                "host": "", "available": true, "detail": "simtrace2-remsim starts after Run" }],
   "problems": {
-    "pcsc": "pyscard is not installed in the Python running Plexus (/home/me/plexus/.venv/bin/python), so no PC/SC reader can be opened. …",
-    "simtrace2": "The SimTrace2 at 1-2.3 is plugged in, but no simtrace2-remsim is running for it. …" } }
+    "pcsc": "pyscard is not installed in the Python running Plexus (/home/me/plexus/.venv/bin/python), so no PC/SC reader can be opened. …" } }
 ```
 
 An editor asks again with a `devices` frame of its own, so a reader plugged in
@@ -135,6 +134,24 @@ reaches it. The runtime stays `running`, moves its nodes from `live` back to
 An editor should therefore keep offering Stop after the traffic goes quiet, and
 must not treat silence as the end of a run. A relay terminal never finishes at
 all; it loops until stopped.
+
+### Armed, then the daemon
+
+A terminal may speak right after the `Armed …` line, in `log` frames whose
+`source` is its node id. The SimTrace2 does: the daemon that feeds it,
+`simtrace2-remsim`, opens its card once at startup on vpcd's
+`Virtual PCD 00 00`, and that card is the armed graph. Started earlier it
+finds no card and exits. So the line after `Armed` is the command to start it
+now, with `-n` set to the Virtual PCD's PC/SC reader number, and a `warn`
+comes before it when a daemon was already running (it opened some other card,
+or none) or the reader number could not be found. When the real terminal's
+first command arrives, one more `info` line says the relay is live. State
+stays `running` throughout; nothing waits for the daemon.
+
+```json
+{ "type": "log", "line": { "t": 0.4, "level": "info", "source": "st",
+  "text": "Start simtrace2-remsim now, in a second terminal (…): sudo simtrace2-remsim --usb-vendor 1d50 --usb-product 60e3 --usb-path 1-2.3 --usb-config 1 -n 0" } }
+```
 
 ### Batching is expected, not optional
 

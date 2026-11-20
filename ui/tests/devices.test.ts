@@ -48,11 +48,11 @@ const BOARD: Device = {
   name: "SimTrace2 (USB 1-2.3)",
   host: "",
   available: true,
-  detail: "no simtrace2-remsim running",
+  detail: "simtrace2-remsim starts after Run",
 };
 
-const NO_DAEMON =
-  "The SimTrace2 at 1-2.3 is plugged in, but no simtrace2-remsim is running for it.";
+const NO_BOARD =
+  "No SimTrace2 on USB (vendor 1d50, product 60e3). Plug the board in, and check that this VM or container is given the USB device.";
 
 describe("the line under a picker", () => {
   it("shows the runtime's reason for a PC/SC picker", () => {
@@ -66,11 +66,11 @@ describe("the line under a picker", () => {
     expect(deviceNotes([SCR], undefined, undefined)).toEqual({ empty: null, problem: "" });
   });
 
-  it("names a missing daemon even with the board listed", () => {
-    // The board is there to pick; what is missing is the thing to start.
-    expect(deviceNotes([BOARD], NO_DAEMON, undefined)).toEqual({
+  it("still shows a reason with a device listed", () => {
+    // The runtime decides what is a problem; a listed device does not hide it.
+    expect(deviceNotes([BOARD], NO_BOARD, undefined)).toEqual({
       empty: null,
-      problem: NO_DAEMON,
+      problem: NO_BOARD,
     });
   });
 
@@ -93,10 +93,10 @@ describe("the line under a picker", () => {
 
 describe("the store", () => {
   it("keeps the reasons with the list, and clears them with the next list", () => {
-    useGraph.getState().setDevices([], { pcsc: NO_PYSCARD, simtrace2: NO_DAEMON });
+    useGraph.getState().setDevices([], { pcsc: NO_PYSCARD, simtrace2: NO_BOARD });
     expect(useGraph.getState().devicesProblems).toEqual({
       pcsc: NO_PYSCARD,
-      simtrace2: NO_DAEMON,
+      simtrace2: NO_BOARD,
     });
 
     useGraph.getState().setDevices([SCR, BOARD]);

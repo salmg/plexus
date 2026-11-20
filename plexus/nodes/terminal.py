@@ -17,7 +17,7 @@ import logging
 import os
 import socket
 import sys
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from plexus.adapters import atrium as _atrium
 
@@ -389,20 +389,30 @@ class SimTrace2Terminal:
     hands the answer back. The path a command takes to get here is
     terminal → SimTrace2 → simtrace2-remsim → vpcd's "Virtual PCD" reader →
     atrium's ``VirtualCard`` on port 35963, which is what this wraps. The
-    daemon is the operator's to start; Plexus only checks it is there.
+    daemon is the operator's to start, and only *after* this has connected:
+    the card it opens on the Virtual PCD is this connection.
 
     Built at bind, connected at bind: vpcd being absent is refused before the
     card is opened, like every other terminal that cannot run. ``close`` is how
     Stop gets through, because ``VirtualCard.run`` blocks on a socket read that
     no stop flag can reach.
+
+    ``notes`` are what the console is told once the graph is armed, as
+    ``(level, text)``: chiefly the daemon command, which is only any use from
+    that moment on. `armed` hands them over.
     """
 
     def __init__(
-        self, usb_path: str, open_card: Optional[Callable[..., Any]] = None
+        self,
+        usb_path: str,
+        open_card: Optional[Callable[..., Any]] = None,
+        notes: Optional[List[Tuple[str, str]]] = None,
     ) -> None:
         self.usb_path = usb_path
         self.relayed = 0
         self.power_ups = 0
+        self.notes: List[Tuple[str, str]] = list(notes or [])
+        self._say: Callable[[str, str], None] = lambda level, text: None
         self._channel: Any = None
         self._stop: Callable[[], bool] = lambda: False
         self._closed = False
@@ -445,10 +455,29 @@ class SimTrace2Terminal:
         if not stop():
             raise gone
 
+    def armed(self, say: Callable[[str, str], None]) -> None:
+        """
+        The graph is armed: say what to do next, and keep `say` for later.
+
+        Called by the engine once every node is bound. The power-up and ATR
+        requests are no sign the daemon arrived: pcscd can power a card up by
+        itself as soon as one appears on a reader. The first command is: only
+        the real terminal sends one. That is the line `relay` adds.
+        """
+        self._say = say
+        for level, text in self.notes:
+            say(level, text)
+
     def relay(self, command: bytes) -> bytes:
         """One command from the terminal, through the chain, and its answer."""
         if self._stop() or self._channel is None:
             return _SW_GONE
+        if self.relayed == 0:
+            self._say(
+                "info",
+                "The terminal's first command reached the chain: "
+                "simtrace2-remsim is relaying.",
+            )
         self.relayed += 1
         try:
             return bytes(self._channel.transmit(bytes(command)))
@@ -543,46 +572,117 @@ def simtrace_pending_reason() -> Optional[str]:
     Why a SimTrace2 node cannot bind here at all, or None when it might.
 
     Pending means no board to bind: not Linux, no atrium, nothing on USB. A
-    board whose daemon is not up yet is *not* pending: the operator starts it
-    and runs again, and with "Refuse to start if the daemon is not already up"
-    switched off the node binds anyway and waits for it.
+    board whose daemon is not up is *not* pending: that is the state to press
+    Run in, since the daemon can only start once the graph is armed.
     """
     found = _atrium.simtrace_discovery()
     if found.boards:
         return None
-    return found.needs or "a SimTrace2 on USB with simtrace2-remsim running for it"
+    return found.needs or "a SimTrace2 on USB"
+
+
+def simtrace_board(device: Any) -> Dict[str, Any]:
+    """
+    The board a SimTrace2 node names, or the only one plugged in. Refused when
+    there is none, or when there are several and none is picked.
+
+    Which board it is does not change what Plexus binds (the vpicc is the same
+    whichever board feeds vpcd), but it is in the daemon command, and printing
+    a command for the wrong board is worse than asking.
+    """
+    found = _atrium.simtrace_discovery()
+    if not sys.platform.startswith("linux"):
+        raise TerminalUnavailable(found.problem)
+    usb = _usb_path(device)
+    if usb:
+        board = next((b for b in found.boards if b.get("usb_path") == usb), None)
+        if board is None:
+            raise TerminalUnavailable(
+                " ".join(
+                    part
+                    for part in (
+                        "The SimTrace2 at USB %s is not plugged in here." % usb,
+                        found.problem,
+                    )
+                    if part
+                )
+            )
+        return board
+    if len(found.boards) == 1:
+        return found.boards[0]
+    if not found.boards:
+        raise TerminalUnavailable(found.problem or "No SimTrace2 on USB.")
+    raise TerminalUnavailable(
+        "%d SimTrace2 boards are plugged in (%s). Pick which one this node is, "
+        "in the inspector."
+        % (
+            len(found.boards),
+            ", ".join("USB %s" % b.get("usb_path") for b in found.boards),
+        )
+    )
+
+
+def simtrace_daemon_line(usb_path: str) -> Tuple[str, List[str]]:
+    """
+    The simtrace2-remsim command for a board, and any warnings about it.
+
+    The command carries ``-n`` with the Virtual PCD's reader number when that
+    could be found. When it could not, the daemon falls back to reader 0, and
+    the warning says how to check that reader 0 is the right one.
+    """
+    index, why = _atrium.vpcd_reader_index()
+    warnings: List[str] = []
+    if index is None:
+        warnings.append(
+            "Could not tell which PC/SC reader number %s has (%s). "
+            "simtrace2-remsim opens reader 0 unless told otherwise: check with "
+            "`pcsc_scan -r` that reader 0 is %s, or add -n with its number. On "
+            "a real reader instead, the terminal talks to the card directly and "
+            "Plexus sees nothing." % (_atrium.VPCD_READER, why, _atrium.VPCD_READER)
+        )
+    return _atrium.simtrace_daemon_command(usb_path, index), warnings
 
 
 def _build_simtrace2(config: Dict[str, Any]) -> SimTrace2Terminal:
-    found = _atrium.simtrace_discovery()
-    usb = _usb_path(config.get("device"))
-    strict = config.get("assertOnly", True) is not False
+    # `assertOnly` ("refuse to start if the daemon is not already up") was
+    # read here, on by default, and with it on the relay could not run: the
+    # daemon exits when started before the graph is armed, and Run was
+    # refused until it was up. A graph saved with it still loads; the key is
+    # simply not read any more.
+    board = simtrace_board(config.get("device"))
+    usb = str(board.get("usb_path") or "")
+    command, warnings = simtrace_daemon_line(usb)
 
-    if not sys.platform.startswith("linux"):
-        raise TerminalUnavailable(found.problem)
-
-    board = next((b for b in found.boards if b.get("usb_path") == usb), None)
-    if board is None and not usb and len(found.boards) == 1:
-        board = found.boards[0]
-
-    if strict:
-        if board is None:
-            if usb:
-                raise TerminalUnavailable(
-                    "The SimTrace2 at USB %s is not plugged in here. %s"
-                    % (usb, found.problem)
-                )
-            raise TerminalUnavailable(
-                found.problem or "Pick which SimTrace2 this node is, in the inspector."
+    notes: List[Tuple[str, str]] = []
+    daemon = board.get("daemon")
+    if daemon is not None:
+        notes.append(
+            (
+                "warn",
+                "A simtrace2-remsim (pid %s) was already running for USB %s "
+                "before this Run. It opened its card before Plexus was armed, "
+                "so it is not relaying this graph. Stop it, then start it again "
+                "with the command below." % (daemon.get("pid"), usb),
             )
-        if board.get("daemon") is None:
-            raise TerminalUnavailable(
-                found.problem
-                or "The SimTrace2 at %s has no simtrace2-remsim running for it. "
-                "Start it in a root shell, then Run again." % board.get("usb_path")
-            )
-
-    return SimTrace2Terminal(usb or (board or {}).get("usb_path", ""))
+        )
+    notes += [("warn", warning) for warning in warnings]
+    notes.append(
+        (
+            "info",
+            "Start simtrace2-remsim now, in a second terminal (the card it opens "
+            "on %s is this graph, so it can only start after Run): %s"
+            % (_atrium.VPCD_READER, command),
+        )
+    )
+    notes.append(
+        (
+            "info",
+            "If it says no card is inserted, this graph is not armed. Never add "
+            "-k: it does not wait for a card, it relays without one and crashes "
+            "on the first command.",
+        )
+    )
+    return SimTrace2Terminal(usb, notes=notes)
 
 
 # ── The rest ────────────────────────────────────────────────────────────────

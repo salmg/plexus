@@ -9,17 +9,23 @@ thing coherent", and that should be answerable on a laptop.
     plexus show  relay.plexus.yaml
     plexus run   relay.plexus.yaml
     plexus nodes
+    plexus remsim
 
 `run` arms the graph for real: it binds what the graph names, drives the
 conversation and prints every APDU that crosses. A graph made of a recorded
 capture and some transforms runs anywhere; the hardware nodes say what they
 need and refuse.
+
+`remsim` prints the simtrace2-remsim command for this machine's SimTrace2:
+the same line the console prints once a SimTrace2 graph is armed, for the
+scripts in `tools/simtrace2/` that start the daemon at that moment.
 """
 
 from __future__ import annotations
 
 import argparse
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -50,7 +56,10 @@ def main(argv: list[str] | None = None) -> int:
         "--timeout",
         type=float,
         default=120.0,
-        help="Give up after this many seconds (default 120)",
+        help=(
+            "Give up after this many seconds (default 120). 0 waits until "
+            "Ctrl-C, for a relay, which never finishes by itself"
+        ),
     )
 
     up = sub.add_parser(
@@ -74,11 +83,24 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("nodes", help="List the node types this build knows")
 
+    remsim = sub.add_parser(
+        "remsim",
+        help="Print the simtrace2-remsim command for this machine's SimTrace2",
+    )
+    remsim.add_argument(
+        "--device",
+        default="",
+        help="Which board, as simtrace2:<usb path> or the bare path. "
+        "The only one plugged in when omitted",
+    )
+
     args = parser.parse_args(argv)
 
     try:
         if args.command == "nodes":
             return _nodes()
+        if args.command == "remsim":
+            return _remsim(args.device)
         if args.command == "up":
             return _up(args.host, args.port, not args.no_open, not args.no_build)
         if args.command == "serve":
@@ -320,15 +342,31 @@ def _run(graph: Graph, quiet: bool = False, timeout: float = 120.0) -> int:
         print("error: %s" % exc, file=sys.stderr)
         return 2
 
+    # A launcher stops a relay with SIGTERM (tools/simtrace2/relay-up.sh does).
+    # Taken as Ctrl-C, so the card is released and the summary still printed,
+    # rather than the process vanishing mid-exchange.
+    previous = _stop_on_sigterm()
+    interrupted = False
     try:
-        finished = engine.wait(timeout=timeout)
+        # Waited for in slices rather than one join: a join with no timeout
+        # cannot be interrupted on Windows, and `--timeout 0` asks for exactly
+        # that wait, ended by Ctrl-C.
+        if timeout > 0:
+            finished = engine.wait(timeout=timeout)
+        else:
+            finished = engine.wait(timeout=0.5)
+            while not finished:
+                finished = engine.wait(timeout=0.5)
     except KeyboardInterrupt:
         print("\ninterrupted", file=sys.stderr)
-        finished = False
+        finished, interrupted = False, True
     finally:
+        # Restored first: a second SIGTERM while stopping should end the
+        # process, not raise inside the stop.
+        _restore_sigterm(previous)
         engine.stop()
 
-    if not finished:
+    if not finished and not interrupted:
         print("error: the run did not finish within %.0fs" % timeout, file=sys.stderr)
         return 1
 
@@ -340,7 +378,65 @@ def _run(graph: Graph, quiet: bool = False, timeout: float = 120.0) -> int:
     exchanges = engine.telemetry(steps[0].id).apdus if steps else 0
     errors = sum(t.errors for t in engine._telemetry.values())
     print("\n%d exchanges, %d errors." % (exchanges, errors))
+    if interrupted:
+        return 130
     return 1 if errors or engine.state == "faulted" else 0
+
+
+def _stop_on_sigterm():
+    """SIGTERM raises KeyboardInterrupt in the main thread. Returns the old handler."""
+    if threading.current_thread() is not threading.main_thread():
+        return None
+
+    def interrupt(signum, frame):
+        raise KeyboardInterrupt
+
+    try:
+        return signal.signal(signal.SIGTERM, interrupt)
+    except (ValueError, OSError):  # pragma: no cover - a platform without it
+        return None
+
+
+def _restore_sigterm(previous) -> None:
+    if previous is None:
+        return
+    try:
+        signal.signal(signal.SIGTERM, previous)
+    except (ValueError, OSError):  # pragma: no cover
+        pass
+
+
+def _remsim(device: str) -> int:
+    """
+    The simtrace2-remsim command for this machine's board, on stdout alone.
+
+    Warnings go to stderr, so a script can take stdout as the command. Refused
+    (exit 2, the reason on stderr) when there is no board to name: not Linux,
+    no atrium, nothing plugged in, or several boards and none picked.
+    """
+    from plexus.nodes.terminal import (
+        TerminalUnavailable,
+        simtrace_board,
+        simtrace_daemon_line,
+    )
+
+    try:
+        board = simtrace_board(device)
+    except TerminalUnavailable as exc:
+        print("error: %s" % exc, file=sys.stderr)
+        return 2
+    command, warnings = simtrace_daemon_line(str(board.get("usb_path") or ""))
+    for warning in warnings:
+        print("warning: %s" % warning, file=sys.stderr)
+    daemon = board.get("daemon")
+    if daemon is not None:
+        print(
+            "warning: a simtrace2-remsim (pid %s) is already running for this "
+            "board. Stop it before starting another." % daemon.get("pid"),
+            file=sys.stderr,
+        )
+    print(command)
+    return 0
 
 
 #: "requester" and "responder" share a first letter, so the short form has to

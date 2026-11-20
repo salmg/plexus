@@ -334,3 +334,34 @@ def test_the_manual_says_which_pages_are_translated():
     assert translated == {spanish.split("/")[-1] for _, spanish in TRANSLATED}, (
         "a page was translated without being added to TRANSLATED above"
     )
+
+
+def test_the_launchers_reach_a_linux_shell_intact(tracked_paths):
+    """
+    tools/simtrace2 runs on the Linux machine the board is plugged into, often
+    from a clone made on Windows or from a GitHub ZIP. A CRLF line ending turns
+    the shebang into "bash\r: bad interpreter", and a script git does not mark
+    executable fails as "Permission denied" when run as ./relay-daemon.sh.
+    `.gitattributes` pins the line endings; the index holds the mode.
+    """
+    modes = {}
+    out = subprocess.run(
+        ["git", "ls-files", "-s", "tools"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    for line in out.stdout.splitlines():
+        meta, path = line.split("\t", 1)
+        modes[path] = meta.split()[0]
+
+    scripts = sorted((REPO / "tools").rglob("*.sh"))
+    assert scripts, "no launchers under tools/"
+    for script in scripts:
+        relative = script.relative_to(REPO).as_posix()
+        assert relative in tracked_paths, f"{relative} exists here but is not in the repo"
+        data = script.read_bytes()
+        assert b"\r" not in data, f"{relative} has CRLF line endings"
+        if data.startswith(b"#!"):
+            assert modes.get(relative) == "100755", f"{relative} is not executable in git"

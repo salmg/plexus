@@ -61,12 +61,15 @@ Worth knowing, all three from atrium's own measurements:
   budget and may abandon the transaction. This is a property of relaying over
   USB, not a bug.
 
-### SimTrace2 · needs Linux, vpcd, the board, and `simtrace2-remsim` in a root shell
+### SimTrace2 · needs Linux, vpcd, the board, and `simtrace2-remsim` started after Run
 
 | Field | |
 |---|---|
-| Device | which SimTrace2, by USB path; the only one is used when none is picked |
-| Refuse to start if the daemon is not already up | on by default. Off, the node binds without the daemon and waits for it |
+| Device | which SimTrace2, by USB path |
+
+Graphs saved with the old `assertOnly` field ("refuse to start if the daemon is
+not already up") still load. It is not read any more: with it on, which was the
+default, the relay could never start.
 
 Presents a virtual card to a real terminal over the contact interface, and
 answers the terminal with whatever card the chain ends in.
@@ -77,14 +80,24 @@ the chain. Binding connects to vpcd, so a missing vpcd is refused at Run before
 the card is opened.
 
 The daemon needs raw USB access and is started by hand. **Plexus never launches
-it** — having a request escalate privileges means either a password prompt with
+it**: having a request escalate privileges means either a password prompt with
 nowhere to go or a passwordless sudo rule that turns the API into a root shell.
-This node finds the board and the daemon through atrium's own SimTrace2
-discovery, prints the command to start the daemon when it is not up, and binds
-once it is.
+
+**Run first, then the daemon.** The card `simtrace2-remsim` opens on the
+Virtual PCD is this node's connection to vpcd, and the daemon opens its card
+once, at startup. Started before Run it finds no card and exits. So the node
+binds with no daemon up, and right after `Armed` the console prints the command
+to start it, with `-n` set to the Virtual PCD's reader number (the daemon picks
+its reader by number alone, and on a real reader it would bypass Plexus). The
+terminal's first command logs that the relay is live. A daemon already running
+at Run is warned about: it opened some other card, or none.
+[A SimTrace2 relay](hardware.md#a-simtrace2-relay) has the walkthrough and the
+launchers in `tools/simtrace2/`.
 
 Worth knowing:
 
+- Never start the daemon with `-k`. It does not wait for a card; it relays
+  without one and crashes on the first command.
 - Only one program answers vpcd at a time. Stop atrium's own relay first.
 - A power cycle from the terminal is not passed to the card, which stays open
   for the whole run. A terminal that expects a cold reset between transactions
