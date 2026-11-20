@@ -284,15 +284,14 @@ const esCatalogue: Record<string, string> = {
   "node.simtrace2.summary":
     "Presenta una tarjeta virtual a un terminal real por la interfaz de contactos.",
   "node.simtrace2.caveat.0":
-    "El demonio se ejecuta fuera de Plexus; se arranca a mano en una shell de root. Plexus nunca lo lanza.",
+    "Pulsa Ejecutar primero y después arranca simtrace2-remsim en tu propia terminal; Plexus nunca lo lanza. La tarjeta que abre en el Virtual PCD de vpcd es este grafo, así que si arranca antes no encuentra tarjeta y se cierra. La consola imprime el comando exacto después de Ejecutar.",
   "node.simtrace2.caveat.1":
-    "Los comandos llegan a Plexus por el lector Virtual PCD de vpcd, en el puerto 35963. Detén antes el relay propio de atrium: sólo uno de los dos puede ocupar ese lector.",
+    "Nunca arranques simtrace2-remsim con -k. No espera a la tarjeta: hace el relay sin ella y se cae con el primer comando.",
   "node.simtrace2.caveat.2":
+    "Los comandos llegan a Plexus por el lector Virtual PCD de vpcd, en el puerto 35963. Detén antes el relay propio de atrium: sólo uno de los dos puede ocupar ese lector.",
+  "node.simtrace2.caveat.3":
     "Un ciclo de alimentación del terminal no llega a la tarjeta, que sigue abierta durante toda la ejecución. Un terminal que espera un reinicio en frío entre transacciones ve una tarjeta que conserva su estado.",
   "field.simtrace2.device.label": "Dispositivo",
-  "field.simtrace2.assertOnly.label": "No empezar si el demonio no está ya levantado",
-  "field.simtrace2.assertOnly.help":
-    "simtrace2-remsim necesita acceso USB directo y se arranca a mano en una consola de root. Plexus nunca lo lanza.",
 
   "node.acr122u.target.title": "ACR122U como tarjeta",
   "node.acr122u.target.summary":

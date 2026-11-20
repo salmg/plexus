@@ -137,24 +137,31 @@ the console and `plexus nodes` print the same sentence.
 A SimTrace2 puts a real payment terminal on the left of the chain: the board
 sits in the terminal's card slot, and every command the terminal sends comes
 through Plexus to whatever card the chain ends in, such as the PC/SC reader
-above. It runs on Linux, and it needs three things Plexus checks for but never
-starts:
+above. It runs on Linux, with two things in place first:
 
 1. **vpcd**, from the `virtualsmartcard` package, loaded into pcscd. `pcsc_scan`
    then lists `Virtual PCD 00 00`: that is where the terminal's commands arrive.
 2. **The board on USB.** Under a VM, give the VM the USB device.
-3. **simtrace2-remsim, running for the board, in a root shell.** It needs raw
-   USB, so Plexus never launches it. The inspector prints the exact command for
-   your board when the daemon is not up.
 
 Then draw **SimTrace2 → (any transforms) → PC/SC reader**, pick the board and
-the reader in the inspector, and press **Run**. Stop atrium's own relay first if
-it is running: only one program at a time can answer vpcd. The picker, `devices`
-in the console and `plexus nodes` say which of the three is missing.
+the reader in the inspector, and do these two steps **in this order**:
+
+3. **Press Run.** Stop atrium's own relay first if it is running: only one
+   program at a time can answer vpcd.
+4. **Then start simtrace2-remsim**, in your own terminal. It needs raw USB, so
+   Plexus never launches it. The console prints the exact command right after
+   `Armed`, and `bash tools/simtrace2/relay-daemon.sh`, started before Run,
+   runs it for you at that moment.
+
+The order is forced. The card the daemon opens on the Virtual PCD *is* the
+armed graph, and it opens that card once, at startup: started first, it finds no
+card and exits. Never add `-k` to get past that; it crashes on the first
+command. The picker, `devices` in the console and `plexus nodes` say what is
+missing before Run.
 
 A power cycle from the terminal is not passed on to the card, which stays open
-for the whole run. See the caveats on the node, and
-[Running on hardware](docs/hardware.md).
+for the whole run. The walkthrough, a headless launcher and a table of failures
+are in [A SimTrace2 relay](docs/hardware.md#a-simtrace2-relay).
 
 The ACR122U and virtual reader nodes can be drawn and checked, but their
 pickers stay empty: they are not built yet, and the inspector says what each

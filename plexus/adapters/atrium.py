@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shlex
 import sys
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -256,18 +257,29 @@ def pcsc_readers() -> list[dict]:
 #
 # The chain a SimTrace2 relay runs through, none of it Plexus's to start:
 #
-#   terminal ─► SimTrace2 board ─► simtrace2-remsim ─► PC/SC reader 0
-#            = vpcd's "Virtual PCD" ─► a vpicc on port 35963 ─► the chain
+#   terminal ─► SimTrace2 board ─► simtrace2-remsim ─► vpcd's "Virtual PCD 00 00"
+#            ─► a vpicc on port 35963 ─► the chain
 #
 # The daemon needs raw USB, so the operator starts it in a root shell; atrium
 # refuses to launch it and so does Plexus. What is asked of atrium here is the
 # discovery it already does for its own dashboard (which board, is a daemon up
 # for it, what command would start one) and the vpicc side: `VirtualCard`,
 # which atrium's own relay hands an OS and an attack to.
+#
+# The order is forced, and it is the opposite of what it looks like. The card
+# simtrace2-remsim opens on the Virtual PCD reader *is* the chain: vpcd only has
+# a card once a vpicc is connected to it, and the daemon opens its card once, at
+# startup, before its relay loop. Started before Plexus arms, it finds an empty
+# reader and exits. So the daemon comes after Run, never before.
 
 #: What simtrace2-remsim talks to. atrium binds the same address and port.
 VPCD_HOST = "127.0.0.1"
 VPCD_PORT = 35963
+
+#: The reader vpcd shows for the slot on `VPCD_PORT`. pcsc-lite names a reader
+#: "<name> <reader number> <slot>", and vpcd's second slot (port 35964) is
+#: "Virtual PCD 00 01", which is not where Plexus's vpicc connects.
+VPCD_READER = "Virtual PCD 00 00"
 
 
 @dataclass(frozen=True)
@@ -278,8 +290,9 @@ class SimTraceDiscovery:
     ``boards`` are atrium's own dicts (``usb_path``, ``manufacturer``,
     ``product``…) with ``daemon`` added: the running simtrace2-remsim for that
     board, or None. ``problem`` and ``needs`` read as `ReaderDiscovery`'s do,
-    and are empty when a board has a daemon up, which is the state a relay can
-    run in.
+    and are empty when a board is plugged in. A board with no daemon is the
+    state to press Run in, not a problem: the daemon can only start once the
+    graph is armed.
     """
 
     boards: list = field(default_factory=list)
@@ -311,7 +324,7 @@ def _simtrace_module() -> Any:
 
 def simtrace_discovery() -> SimTraceDiscovery:
     """The SimTrace2 boards here, asked fresh each call. Never raises."""
-    needs_rig = "a SimTrace2 on USB with simtrace2-remsim running for it"
+    needs_rig = "a SimTrace2 on USB"
     if not sys.platform.startswith("linux"):
         return SimTraceDiscovery(
             problem=(
@@ -326,7 +339,9 @@ def simtrace_discovery() -> SimTraceDiscovery:
         return SimTraceDiscovery(
             problem=(
                 "atrium is not checked out, so no SimTrace2 can be found. Inside a "
-                "clone of this repository: git submodule update --init vendor/atrium."
+                "clone of this repository: git submodule update --init "
+                "vendor/atrium (a ZIP download never includes it), or set %s "
+                "to an atrium checkout." % ATRIUM_VARIABLE
             ),
             needs="the atrium submodule (git submodule update --init vendor/atrium)",
         )
@@ -364,22 +379,79 @@ def simtrace_discovery() -> SimTraceDiscovery:
             needs=needs_rig,
         )
 
-    if not any(b["daemon"] for b in boards):
-        try:
-            command = st.simtrace_command(boards[0].get("usb_path", ""))["command"]
-        except Exception:  # noqa: BLE001 — the hint is a courtesy
-            command = "sudo simtrace2-remsim --usb-path %s" % boards[0].get("usb_path")
-        return SimTraceDiscovery(
-            boards=boards,
-            problem=(
-                "The SimTrace2 at %s is plugged in, but no simtrace2-remsim is "
-                "running for it. Start it in a root shell; Plexus never launches "
-                "it: %s" % (boards[0].get("usb_path"), command)
-            ),
-            needs="simtrace2-remsim running for the board (Plexus never starts it)",
-        )
-
+    # A board with no daemon used to be reported as the problem, with the
+    # command to start one, and Run refused until it was up. That asked for
+    # the one order that cannot work (see the note above `VPCD_HOST`): the
+    # daemon exits when started first. The command is printed after Run now,
+    # which is the moment it can be used.
     return SimTraceDiscovery(boards=boards)
+
+
+def vpcd_reader_index() -> tuple[Optional[int], str]:
+    """
+    The PC/SC reader number of `VPCD_READER`, or None and why. Never raises.
+
+    simtrace2-remsim picks its reader by number alone (``-n``, 0 when not
+    given) and never by name. The Virtual PCD usually is reader 0 (atrium's
+    own README says so), but "usually" is the trap:
+    when a real reader holds that number, the daemon opens the real card
+    directly, the terminal gets a working relay, and Plexus sees nothing at
+    all. So the number is looked up by name, in the order pyscard lists
+    readers, which is the same `SCardListReaders` order the daemon counts in.
+    """
+    if importlib.util.find_spec("smartcard") is None:
+        return None, "pyscard is not installed in the Python running Plexus (%s)" % (
+            sys.executable
+        )
+    try:
+        require_atrium()
+        from core.readers import probe
+    except (AtriumUnavailable, ImportError) as exc:
+        return None, "atrium's reader discovery will not import: %s" % exc
+    try:
+        found, problem = probe()  # probe() is documented never to raise
+    except Exception as exc:  # noqa: BLE001 — belt and braces around a third party
+        found, problem = [], "listing readers failed: %s" % exc
+
+    # The exact name or nothing. A near match ("Virtual PCD 01 00") may be
+    # another reader, and a wrong number is the very failure this exists to
+    # prevent; no number makes the caller say so and the operator check.
+    names = [(reader.index, reader.name) for reader in found]
+    exact = next((index for index, name in names if name == VPCD_READER), None)
+    if exact is not None:
+        return exact, ""
+    if not names:
+        return None, problem or "no PC/SC readers are listed"
+    return None, "no reader named %s among %s" % (
+        VPCD_READER,
+        ", ".join(name for _, name in names),
+    )
+
+
+#: What atrium's own command looks like, for when atrium cannot be asked.
+_REMSIM_FALLBACK = (
+    "sudo simtrace2-remsim --usb-vendor 1d50 --usb-product 60e3 "
+    "--usb-path %s --usb-config 1"
+)
+
+
+def simtrace_daemon_command(usb_path: str, reader: Optional[int]) -> str:
+    """
+    The simtrace2-remsim line for a board, with the reader number added.
+
+    atrium builds the line it shows on its own dashboard: the binary it finds
+    (its configured path, then a list of usual build directories, then the
+    PATH) and ``sudo`` unless told otherwise. What it leaves out is ``-n``,
+    because it trusts reader 0 to be the Virtual PCD; ``reader`` is the number
+    `vpcd_reader_index` found, appended when there is one.
+    """
+    try:
+        command = _simtrace_module().simtrace_command(usb_path)["command"]
+    except Exception:  # noqa: BLE001 — atrium refuses an unknown path; fall back
+        command = _REMSIM_FALLBACK % shlex.quote(usb_path or "USB-PATH-HERE")
+    if reader is not None:
+        command += " -n %d" % reader
+    return command
 
 
 def open_virtual_card(

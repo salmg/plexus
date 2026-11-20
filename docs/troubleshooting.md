@@ -134,6 +134,16 @@ Other hardware nodes (`cardproxy`, `nfcgate`, the contactless ones) still need
 adapters that are not written yet, and refuse at bind naming what they want.
 `plexus nodes` marks every one of them. See [Running on hardware](hardware.md).
 
+### `simtrace2-remsim` says no card is inserted
+
+`unable to open card on reader 'Virtual PCD 00 00'` means the daemon started
+before the graph was armed. The card it opens there is the armed graph, so the
+order is fixed: press **Run**, then start the daemon with the command the
+console prints after `Armed` (or let `bash tools/simtrace2/relay-daemon.sh`
+start it). Do not add `-k`: it relays with no card and crashes on the first
+command. The other SimTrace2 failures, a relay Plexus never sees among them,
+are in [A SimTrace2 relay](hardware.md#when-it-fails).
+
 ### `Capture … is outside the workspace`
 
 Paths resolve inside the directory the runtime was started in. Either move the

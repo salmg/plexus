@@ -68,18 +68,10 @@ const TERMINALS: NodeType[] = [
     ports: [CARD_PORT],
     device: "simtrace2",
     latencyMs: 2,
-    fields: [
-      { kind: "device", key: "device", label: "Device", deviceKind: "simtrace2" },
-      {
-        kind: "bool",
-        key: "assertOnly",
-        label: "Refuse to start if the daemon is not already up",
-        default: true,
-        help: "simtrace2-remsim needs raw USB access and is started by hand in a root shell. Plexus never launches it.",
-      },
-    ],
+    fields: [{ kind: "device", key: "device", label: "Device", deviceKind: "simtrace2" }],
     caveats: [
-      "The daemon runs outside Plexus, started by hand in a root shell. Plexus never launches it.",
+      "Press Run first, then start simtrace2-remsim in your own terminal; Plexus never launches it. The card it opens on vpcd's Virtual PCD is this graph, so started first it finds no card and exits. The console prints the exact command after Run.",
+      "Never start simtrace2-remsim with -k. It does not wait for a card: it relays without one and crashes on the first command.",
       "Commands reach Plexus through vpcd's Virtual PCD reader on port 35963. Stop atrium's own relay first: only one of the two can hold that slot.",
       "A power cycle from the terminal is not passed to the card, which stays open for the whole run. A terminal that expects a cold reset between transactions sees a card that kept its state.",
     ],

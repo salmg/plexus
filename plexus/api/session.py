@@ -361,7 +361,7 @@ class Session:
         `asdict` is the whole translation.
 
         `problems` says, per device kind, why none is ready: no pyscard in this
-        Python, no atrium checkout, pcscd refusing, a SimTrace2 with no daemon.
+        Python, no atrium checkout, pcscd refusing, no SimTrace2 on USB.
         Without it a picker on a machine whose reader `pcsc_scan` lists said
         only that nothing was there, which was true of the runtime and false of
         the machine.

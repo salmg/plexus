@@ -1,0 +1,47 @@
+# Plexus graph.
+#
+# A real payment terminal on one side, a real card on the other, every APDU
+# written to logs/trace.jsonl on the way through:
+#
+#   terminal -> SimTrace2 -> simtrace2-remsim -> vpcd "Virtual PCD 00 00"
+#            -> this graph -> a contact card in a PC/SC reader
+#
+# Linux only, with vpcd loaded into pcscd and the board on USB. The two devices
+# are one bench's and are the values to change: the board by its USB path
+# (`lsusb -t`, or `plexus remsim` prints it), the reader by any fragment of its
+# name that matches exactly one reader (`pcsc_scan -r`). Picking them in the
+# editor's inspector writes the same fields.
+#
+# The order is the part that bites. Press Run (or `plexus run`) FIRST, then
+# start simtrace2-remsim: the card it opens on the Virtual PCD is this graph,
+# so started first it finds no card and exits. The console prints the exact
+# command once armed, and tools/simtrace2/relay-daemon.sh starts it for you at
+# that moment. Never pass it -k. See docs/hardware.md.
+version: 1
+name: simtrace2 relay to a real card
+
+nodes:
+  - id: st
+    type: simtrace2
+    at: [40, 160]
+    config:
+      device: "simtrace2:2-2.1"
+
+  - id: trace-1
+    type: trace
+    at: [340, 160]
+    config:
+      detail: annotated
+      path: logs/trace.jsonl
+
+  - id: card-1
+    type: pcsc
+    at: [640, 160]
+    config:
+      device: "pcsc:SCR 3310"
+
+edges:
+  - from: st:card
+    to: trace-1:terminal
+  - from: trace-1:card
+    to: card-1:terminal
