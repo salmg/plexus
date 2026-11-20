@@ -31,7 +31,7 @@ jobs:
   # and its recorded transport.
   python:
     name: python ${{ matrix.python }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     # A backstop under the faulthandler dump in pyproject.toml. Without either,
     # the 3.12 job that hung sat there until GitHub's six-hour default.
     timeout-minutes: 15
@@ -40,7 +40,16 @@ jobs:
       matrix:
         # 3.8 is the declared floor in pyproject.toml; 3.12 is what a rig will have.
         # Both, because the codebase is written to the older one deliberately.
-        python: ["3.8", "3.12"]
+        #
+        # 3.8 is pinned to ubuntu-24.04: ubuntu-latest moved to 26.04, and
+        # setup-python has no 3.8 build for it ("The version '3.8' with
+        # architecture 'x64' was not found for Ubuntu 26.04", 2026-11-20).
+        # actions/python-versions builds 3.8.18 for 20.04, 22.04 and 24.04 only.
+        include:
+          - python: "3.8"
+            os: ubuntu-24.04
+          - python: "3.12"
+            os: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
